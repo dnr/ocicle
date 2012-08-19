@@ -2,3 +2,4 @@ syntax: glob
 *.js
 .*.swp
 images
+old_images
