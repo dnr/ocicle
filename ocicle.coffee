@@ -64,6 +64,48 @@ cancelFrame = window.cancelAnimationFrame       ||
               (id) -> window.clearTimeout id
 
 
+# adapted from https://gist.github.com/771192
+class LruCache
+  _has = Object.prototype.hasOwnProperty
+
+  constructor: (@max_length) ->
+    @map = {}
+    @length = 0
+
+  _insert: (node) ->
+    @map[node[0]] = node
+    @length++
+    if @length > @max_length
+      for key of @map
+        # Depends on unspecified behavior, that JavaScript enumerates
+        # objects in the order that the keys were inserted.
+        if _has.call @map, key
+          @_remove @map[key]
+          break
+
+  _remove: (node) ->
+    delete @map[node[0]]
+    @length--
+
+  get: (key) ->
+    node = @map[key]
+    if node
+      @_remove node
+      @_insert node
+      node[1]
+    else
+      undefined
+
+  put: (key, value) ->
+    if _has.call @map, key
+      node = @map[key]
+      node[1] = value
+      @_remove node
+      @_insert node
+    else
+      @_insert [key, value]
+
+
 class ImagePosition
   constructor: (@nat_w, @nat_h) ->
     @base_x = @base_y = 0
@@ -91,7 +133,6 @@ class DZImage
     @min_level = @find_level @tile_size / 2
     @max_level = @find_level Math.max @w, @h
     @pos = new ImagePosition @w, @h
-    @cache = {}
 
   get_at_level: (level, x, y) ->
     return IMAGEDIR + '/' + @name + '/' + level + '/' + x + '_' + y + '.jpg'
@@ -99,7 +140,9 @@ class DZImage
   find_level: (dim) ->
     Math.ceil(Math.log(dim) / Math.LN2)
 
-  render_onto_ctx: (ctx, x, y, w, h) ->
+  render_onto_ctx: (ctx, tile_cache, x, y, w, h) ->
+    frame = ctx.ocicle_frame
+
     level = 1 + @find_level Math.max w, h
     level = Math.max level, @min_level
     level = Math.min level, @max_level
@@ -115,31 +158,33 @@ class DZImage
       for r in [0..max_tiles]
         break if r * @tile_size > (@h >> level_diff)
 
+        # ignore tiles outside of viewable area
         draw_x = x + c * ts
         draw_y = y + r * ts
         continue if draw_x > ctx.canvas.width or draw_y > ctx.canvas.height
         continue if draw_x + ts < 0 or draw_y + ts < 0
 
-        do (c, r) =>
-          src = @get_at_level level, c, r
-          dom = @cache[src]
-          draw = (dom) ->
-            ctx.drawImage dom,
+        draw = do (c, r) -> () ->
+          if ctx.ocicle_frame == frame
+            ctx.drawImage @,
               x + c * ts,
               y + r * ts,
-              dom.naturalWidth * factor,
-              dom.naturalHeight * factor
-          if dom
-            draw dom
-          else
-            dom = document.createElement 'img'
-            dom.src = src
-            dom.onload = () =>
-              @cache[src] = dom
-              draw dom
-          false
-      false
-    false
+              @naturalWidth * factor,
+              @naturalHeight * factor
+
+        src = @get_at_level level, c, r
+        img = tile_cache.get src
+        if img?.complete
+          draw.call img
+        else if img
+          img.addEventListener 'load', draw
+        else
+          img = document.createElement 'img'
+          tile_cache.put src, img
+          img.src = src
+          img.addEventListener 'load', draw
+
+    return
 
 
 class Ocicle
@@ -150,6 +195,8 @@ class Ocicle
     @c.addEventListener 'mouseup', @on_mouseup, true
     @c.addEventListener 'mouseout', @on_mouseup, true
 
+    @frame = 0
+    @tile_cache = new LruCache 100
     @images = (new DZImage dz for dz in IMAGES)
     @reset()
 
@@ -260,25 +307,30 @@ class Ocicle
   on_resize: () ->
     @render()
 
-  render: () =>
-    cw = @c.width = @c.parentElement.clientWidth + 10
-    ch = @c.height = @c.parentElement.clientHeight + 10
+  render: () ->
+    cw = @c.parentElement.clientWidth
+    if @c.width < cw then @c.width = cw
+    ch = @c.parentElement.clientHeight
+    if @c.height < ch then @c.height = ch
+
     ctx = @c.getContext '2d'
-    ctx.strokeStyle = '#222'
+    ctx.ocicle_frame = @frame++
+    ctx.clearRect 0, 0, cw, ch
+    ctx.strokeStyle = '#222'  # for image frames
+    ctx.lineWidth = Math.max 1, @scale
     for i in @images
       x = i.pos.x * @scale + @pan_x
       y = i.pos.y * @scale + @pan_y
       w = i.pos.w * @scale
       h = i.pos.h * @scale
+      continue if x > cw or y > ch or x + w < 0 or y + h < 0
       ctx.strokeRect x, y, w, h
-      i.render_onto_ctx ctx, x, y, w, h
+      i.render_onto_ctx ctx, @tile_cache, x, y, w, h
     return
 
 
 
-log = (l) ->
-  c = document.getElementById 'console'
-  c.innerText = l
+log = (id, l) -> (document.getElementById id).innerText = l
 
 on_resize = () ->
   leftcol = document.getElementById 'leftcol'
