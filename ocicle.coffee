@@ -1,22 +1,47 @@
 
 IMAGES = [
-  'p1030318_flat.jpg'
-  'p1030340_flat.jpg'
-  'p1030345_flat.jpg'
-  'p1030350_flat.jpg'
-  'p1030376_flat.jpg'
-  'p1030410_flat.jpg'
-  'p1030420_flat.jpg'
-  'p1030435_flat.jpg'
-  'p1030440_flat.jpg'
-  'p1030455_flat.jpg'
-  'p1030465_flat.jpg'
-  'p1030485_flat.jpg'
-  'p1030490_flat.jpg'
-  'p1030510_flat.jpg'
-  'p1030551b_flat.jpg'
-  'p1030556_flat.jpg'
-  'p1030561_flat.jpg'
+  {name: 'p1030308', w: 4546, h: 3428, ts: 512, o: 1}
+  {name: 'p1030313', w: 4548, h: 3412, ts: 512, o: 1}
+  {name: 'p1030318', w: 4553, h: 3424, ts: 512, o: 1}
+  {name: 'p1030323', w: 4563, h: 3320, ts: 512, o: 1}
+  {name: 'p1030328', w: 4544, h: 3363, ts: 512, o: 1}
+  {name: 'p1030333', w: 4569, h: 3384, ts: 512, o: 1}
+  {name: 'p1030340', w: 4569, h: 3429, ts: 512, o: 1}
+  {name: 'p1030345', w: 4583, h: 3419, ts: 512, o: 1}
+  {name: 'p1030350', w: 4542, h: 3370, ts: 512, o: 1}
+  {name: 'p1030355', w: 4587, h: 3426, ts: 512, o: 1}
+  {name: 'p1030366', w: 4535, h: 3412, ts: 512, o: 1}
+  {name: 'p1030371', w: 4517, h: 3374, ts: 512, o: 1}
+  {name: 'p1030376', w: 4552, h: 3430, ts: 512, o: 1}
+  {name: 'p1030381', w: 4562, h: 3402, ts: 512, o: 1}
+  {name: 'p1030395', w: 4571, h: 3389, ts: 512, o: 1}
+  {name: 'p1030400', w: 4570, h: 3440, ts: 512, o: 1}
+  {name: 'p1030405', w: 4565, h: 3425, ts: 512, o: 1}
+  {name: 'p1030410', w: 4542, h: 3419, ts: 512, o: 1}
+  {name: 'p1030420', w: 4519, h: 3403, ts: 512, o: 1}
+  {name: 'p1030425', w: 4584, h: 3427, ts: 512, o: 1}
+  {name: 'p1030430', w: 4527, h: 3403, ts: 512, o: 1}
+  {name: 'p1030435', w: 4576, h: 3424, ts: 512, o: 1}
+  {name: 'p1030440', w: 4581, h: 3422, ts: 512, o: 1}
+  {name: 'p1030445', w: 4571, h: 3434, ts: 512, o: 1}
+  {name: 'p1030455', w: 4581, h: 3431, ts: 512, o: 1}
+  {name: 'p1030460', w: 4561, h: 3406, ts: 512, o: 1}
+  {name: 'p1030465', w: 4579, h: 3399, ts: 512, o: 1}
+  {name: 'p1030475', w: 4578, h: 3408, ts: 512, o: 1}
+  {name: 'p1030480', w: 4521, h: 3412, ts: 512, o: 1}
+  {name: 'p1030485', w: 4568, h: 3433, ts: 512, o: 1}
+  {name: 'p1030490', w: 10113, h: 3144, ts: 512, o: 1}
+  {name: 'p1030500', w: 4580, h: 3430, ts: 512, o: 1}
+  {name: 'p1030505', w: 4581, h: 3436, ts: 512, o: 1}
+  {name: 'p1030510', w: 4526, h: 3422, ts: 512, o: 1}
+  {name: 'p1030516', w: 4530, h: 3417, ts: 512, o: 1}
+  {name: 'p1030521', w: 4583, h: 3440, ts: 512, o: 1}
+  {name: 'p1030526', w: 4566, h: 3398, ts: 512, o: 1}
+  {name: 'p1030531', w: 4567, h: 3425, ts: 512, o: 1}
+  {name: 'p1030541', w: 2048, h: 2510, ts: 512, o: 1}
+  {name: 'p1030551', w: 4507, h: 3450, ts: 512, o: 1}
+  {name: 'p1030556', w: 4549, h: 3412, ts: 512, o: 1}
+  {name: 'p1030561', w: 4581, h: 3421, ts: 512, o: 1}
 ]
 IMAGEDIR = 'images'
 PADDING = 150
@@ -39,45 +64,82 @@ cancelFrame = window.cancelAnimationFrame       ||
               (id) -> window.clearTimeout id
 
 
-class Image
-  LOADING = 0
-  READY = 1
-  ERROR = 2
-
-  constructor: (@src, @on_ready) ->
-    @dom = document.createElement 'img'
-    @dom.src = src
-    @dom.onload = () => @on_load true
-    @dom.onerror = @dom.onabort = () => @on_load false
-    @state = LOADING
+class ImagePosition
+  constructor: (@nat_w, @nat_h) ->
     @base_x = @base_y = 0
-    @nat_w = @nat_h = 100
     @req_w = @req_h = 100
-    @w = @h = 100
-
-  ready: () -> @state == READY
-
-  on_load: (success) ->
-    if success
-      @nat_w = @dom.naturalWidth
-      @nat_h = @dom.naturalHeight
-      @state = READY
-      @update()
-      @on_ready()
-    else
-      @state = ERROR
+    @update()
 
   update: () ->
-    if @ready()
-      ratio = Math.min(@req_w / @nat_w, @req_h / @nat_h)
-      @w = @nat_w * ratio
-      @h = @nat_h * ratio
-      @x = @base_x + (@req_w - @w) / 2
-      @y = @base_y + (@req_h - @h) / 2
+    ratio = Math.min(@req_w / @nat_w, @req_h / @nat_h)
+    @w = @nat_w * ratio
+    @h = @nat_h * ratio
+    @x = @base_x + (@req_w - @w) / 2
+    @y = @base_y + (@req_h - @h) / 2
 
   move: (@base_x, @base_y) -> @update()
   resize: (@req_w, @req_h) -> @update()
 
+
+class DZImage
+  constructor: (dz) ->
+    @name = dz.name
+    @w = dz.w
+    @h = dz.h
+    @tile_size = dz.ts
+    @overlap = dz.o
+    @min_level = @find_level @tile_size / 2
+    @max_level = @find_level Math.max @w, @h
+    @pos = new ImagePosition @w, @h
+    @cache = {}
+
+  get_at_level: (level, x, y) ->
+    return IMAGEDIR + '/' + @name + '/' + level + '/' + x + '_' + y + '.jpg'
+
+  find_level: (dim) ->
+    Math.ceil(Math.log(dim) / Math.LN2)
+
+  render_onto_ctx: (ctx, x, y, w, h) ->
+    level = 1 + @find_level Math.max w, h
+    level = Math.max level, @min_level
+    level = Math.min level, @max_level
+    level_diff = @max_level - level
+
+    max_tiles = (1 << level) / @tile_size
+    factor = w / @w * Math.pow(2, level_diff)
+    ts = @tile_size * factor
+
+    for c in [0..max_tiles]
+      break if c * @tile_size > (@w >> level_diff)
+
+      for r in [0..max_tiles]
+        break if r * @tile_size > (@h >> level_diff)
+
+        draw_x = x + c * ts
+        draw_y = y + r * ts
+        continue if draw_x > ctx.canvas.width or draw_y > ctx.canvas.height
+        continue if draw_x + ts < 0 or draw_y + ts < 0
+
+        do (c, r) =>
+          src = @get_at_level level, c, r
+          dom = @cache[src]
+          draw = (dom) ->
+            ctx.drawImage dom,
+              x + c * ts,
+              y + r * ts,
+              dom.naturalWidth * factor,
+              dom.naturalHeight * factor
+          if dom
+            draw dom
+          else
+            dom = document.createElement 'img'
+            dom.src = src
+            dom.onload = () =>
+              @cache[src] = dom
+              draw dom
+          false
+      false
+    false
 
 
 class Ocicle
@@ -88,7 +150,7 @@ class Ocicle
     @c.addEventListener 'mouseup', @on_mouseup, true
     @c.addEventListener 'mouseout', @on_mouseup, true
 
-    @images = @load_images IMAGEDIR, IMAGES
+    @images = (new DZImage dz for dz in IMAGES)
     @reset()
 
   reset: () ->
@@ -102,12 +164,8 @@ class Ocicle
   set_pan_y: (@pan_y) =>
   set_scale: (@scale) =>
 
-  load_images: (prefix, images) ->
-    new Image (prefix + '/' + image), @render for image in images
-
   layout_images: (totalw, totalh) ->
     padding = totalw / PADDING
-
     len = @images.length
 
     cols = Math.ceil len / (Math.ceil Math.sqrt len)
@@ -126,8 +184,8 @@ class Ocicle
       even = 1 - (r % 2)
       for c in [1..cols - even]
         if i >= len then break
-        @images[i].move (c-1+even/2) * boxw + padding, (r-1) * boxh + padding
-        @images[i].resize imgw, imgh
+        @images[i].pos.move (c-1+even/2) * boxw + padding, (r-1) * boxh + padding
+        @images[i].pos.resize imgw, imgh
         i += 1
 
     @render()
@@ -202,24 +260,18 @@ class Ocicle
   on_resize: () ->
     @render()
 
-  all_ready: () ->
-    for image in @images
-      if not image.ready()
-        return false
-    return true
-
   render: () =>
-    if not @all_ready()
-      return
-    cw = @c.width = @c.parentElement.clientWidth + 100
-    ch = @c.height = @c.parentElement.clientHeight + 100
+    cw = @c.width = @c.parentElement.clientWidth + 10
+    ch = @c.height = @c.parentElement.clientHeight + 10
     ctx = @c.getContext '2d'
-    ctx.translate @pan_x, @pan_y
-    ctx.scale @scale, @scale
     ctx.strokeStyle = '#222'
     for i in @images
-      ctx.strokeRect i.x, i.y, i.w, i.h
-      ctx.drawImage i.dom, i.x, i.y, i.w, i.h
+      x = i.pos.x * @scale + @pan_x
+      y = i.pos.y * @scale + @pan_y
+      w = i.pos.w * @scale
+      h = i.pos.h * @scale
+      ctx.strokeRect x, y, w, h
+      i.render_onto_ctx ctx, x, y, w, h
     return
 
 
