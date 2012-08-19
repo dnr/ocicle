@@ -18,11 +18,15 @@ IMAGES = [
   'p1030556_flat.jpg'
   'p1030561_flat.jpg'
 ]
-
 IMAGEDIR = 'images'
-
 SLIDE_W = 2500
 SLIDE_H = 2500
+PADDING = 150
+DRAG_FACTOR = 2
+DRAG_THRESHOLD = 3
+ANIMATE_MS = 500
+ANIMATE_FRAMES = 30
+
 
 is_child = (parent, child) ->
   while child and child != parent
@@ -83,36 +87,44 @@ class Ocicle
   constructor: (@c) ->
     @c.style.overflow = 'hidden'
 
-    @slide_x = 0
-    @slide_y = 0
     @slide = document.createElement 'div'
     @slide.className = 'slide'
     @slide.style.position = 'relative'
-    @slide.style.left = @slide_x
-    @slide.style.top = @slide_y
-    @slide.style.width = SLIDE_W
-    @slide.style.height = SLIDE_H
     @c.appendChild @slide
 
     @images = @load_images IMAGEDIR, IMAGES
-    @layout_images SLIDE_W, SLIDE_H
     @slide.appendChild image.dom for image in @images
 
-    @dragstate = 0
+    @reset()
+
+    @drag_state = 0
     @drag_screen_x = 0
     @drag_screen_y = 0
     @drag_slide_x = 0
     @drag_slide_y = 0
+
     @c.addEventListener 'mousedown', @on_mousedown, true
+    @c.addEventListener 'contextmenu', @on_mousedown, true
     @c.addEventListener 'mousemove', @on_mousemove, true
     @c.addEventListener 'mouseup', @on_mouseup, true
     @c.addEventListener 'mouseout', @on_mouseup, true
 
+  set_slide_x: (@slide_x) => @slide.style.left = @slide_x
+  set_slide_y: (@slide_y) => @slide.style.top = @slide_y
+  set_slide_size: (@slide_size) => @layout_images()
+
+  reset: () ->
+    @stop_animation()
+    @set_slide_x 0
+    @set_slide_y 0
+    @set_slide_size 2000
+
   load_images: (prefix, images) ->
     new Img (prefix + '/' + image) for image in images
 
-  layout_images: (totalw, totalh) ->
-    padding = 8
+  layout_images: () ->
+    totalw = totalh = @slide_size
+    padding = totalw / PADDING
 
     len = @images.length
 
@@ -138,46 +150,77 @@ class Ocicle
 
     false
 
-  on_resize: () ->
-    @layout_images()
-    image.update_dom() for image in @images
-
   on_mousedown: (e) =>
-    if e.button == 0
+    if e.button == 0 or e.button == 2
       e.preventDefault()
-      @dragstate = 1
+      @stop_animation()
+      @drag_state = 1
       @drag_screen_x = e.screenX
       @drag_screen_y = e.screenY
       @drag_slide_x = @slide_x
       @drag_slide_y = @slide_y
 
   on_mousemove: (e) =>
-    if @dragstate
-      @slide_target_x = @drag_slide_x + 2 * (e.screenX - @drag_screen_x)
-      @slide_target_y = @drag_slide_y + 2 * (e.screenY - @drag_screen_y)
-      @animate 500, 30
+    if @drag_state >= 1
+      move_x = e.screenX - @drag_screen_x
+      move_y = e.screenY - @drag_screen_y
+      if Math.abs(move_x) > DRAG_THRESHOLD or Math.abs(move_y) > DRAG_THRESHOLD
+        @drag_state = 2
+      if @drag_state >= 2
+        x =
+          start: @slide_x
+          end: @drag_slide_x + DRAG_FACTOR * move_x
+          set: @set_slide_x
+        y =
+          start: @slide_y
+          end: @drag_slide_y + DRAG_FACTOR * move_y
+          set: @set_slide_y
+        @animate [x, y], ANIMATE_MS, ANIMATE_FRAMES
 
   on_mouseup: (e) =>
     if e.relatedTarget and is_child @c, e.relatedTarget
       return
-    @dragstate = 0
+    if @drag_state == 1
+      e.preventDefault()
+      @do_zoom (if e.button == 0 then 2 else 1/2), e.clientX, e.clientY
+    @drag_state = 0
 
-  animate: (ms, steps) ->
-    if @timeoutid
-      window.clearTimeout @timeoutid
+  do_zoom: (factor, clientx, clienty) =>
+    bounds = @c.getBoundingClientRect()
+    center_x = clientx - bounds.left - @c.clientLeft + @c.scrollLeft
+    center_y = clienty - bounds.top - @c.clientTop + @c.scrollTop
 
-    fn = (orig_x, orig_y, start) =>
+    size =
+      start: @slide_size
+      end: factor * @slide_size
+      set: @set_slide_size
+    x =
+      start: @slide_x
+      end: center_x - factor * (center_x - @slide_x)
+      set: @set_slide_x
+    y =
+      start: @slide_y
+      end: center_y - factor * (center_y - @slide_y)
+      set: @set_slide_y
+    @animate [size, x, y], 1000, 20
+
+  stop_animation: () ->
+    window.clearTimeout @timeoutid if @timeoutid
+
+  animate: (props, ms, steps) ->
+    @stop_animation()
+    start = Date.now() - ms/steps
+    fn = () =>
       t = Math.min 1, (Date.now() - start) / ms
       t = Math.pow t, 0.5
-      @slide_x = orig_x * (1-t) + @slide_target_x * t
-      @slide_y = orig_y * (1-t) + @slide_target_y * t
-      @slide.style.left = @slide_x
-      @slide.style.top = @slide_y
-      if t < 1
-        @timeoutid = window.setTimeout fn, ms/steps, orig_x, orig_y, start
-      else
-        @timeoutid = null
-    @timeoutid = window.setTimeout fn, 0, @slide_x, @slide_y, Date.now()
+      for prop in props
+        prop.set prop.start * (1-t) + prop.end * t
+      @timeoutid = if t < 1 then window.setTimeout fn, ms/steps
+    @timeoutid = window.setTimeout fn, 0
+
+#  on_resize: () ->
+#    false
+
 
 
 
@@ -187,9 +230,9 @@ log = (l) ->
 
 on_load = () ->
   window.ocicle = new Ocicle document.getElementById "c"
-on_resize = () ->
-  if window.ocicle then window.ocicle.on_resize()
+#on_resize = () ->
+#  if window.ocicle then window.ocicle.on_resize()
 
 window.addEventListener 'load', on_load, false
-window.addEventListener 'resize', on_resize, false
+#window.addEventListener 'resize', on_resize, false
 
