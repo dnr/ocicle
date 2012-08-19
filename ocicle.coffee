@@ -22,6 +22,8 @@ IMAGEDIR = 'images'
 PADDING = 150
 DRAG_FACTOR = 2
 DRAG_THRESHOLD = 3
+ZOOM_FACTOR = 2
+ANIMATE_MS = 500
 
 requestFrame = window.requestAnimationFrame       ||
                window.webkitRequestAnimationFrame ||
@@ -36,10 +38,6 @@ cancelFrame = window.cancelAnimationFrame       ||
               window.msCancelAnimationFrame     ||
               (id) -> window.clearTimeout id
 
-is_child = (parent, child) ->
-  while child and child != parent
-    child = child.parentNode
-  return child == parent
 
 class Image
   LOADING = 0
@@ -84,32 +82,25 @@ class Image
 
 class Ocicle
   constructor: (@c) ->
-    @images = @load_images IMAGEDIR, IMAGES
-    @reset()
-    @layout_images 2000, 2000
-
-    @drag_state = 0
-    @drag_screen_x = 0
-    @drag_screen_y = 0
-    @drag_slide_x = 0
-    @drag_slide_y = 0
-
     @c.addEventListener 'mousedown', @on_mousedown, true
     @c.addEventListener 'contextmenu', @on_mousedown, true
     @c.addEventListener 'mousemove', @on_mousemove, true
     @c.addEventListener 'mouseup', @on_mouseup, true
     @c.addEventListener 'mouseout', @on_mouseup, true
 
-  set_slide_x: (@slide_x) =>
-  set_slide_y: (@slide_y) =>
-  set_slide_size: (@slide_size) =>
+    @images = @load_images IMAGEDIR, IMAGES
+    @reset()
 
   reset: () ->
     @stop_animation()
-    @set_slide_x 0
-    @set_slide_y 0
-    @set_slide_size 1.0
-    @render()
+    @set_pan_x 0
+    @set_pan_y 0
+    @set_scale 1.0
+    @layout_images @c.parentElement.clientWidth, @c.parentElement.clientHeight
+
+  set_pan_x: (@pan_x) =>
+  set_pan_y: (@pan_y) =>
+  set_scale: (@scale) =>
 
   load_images: (prefix, images) ->
     new Image (prefix + '/' + image), @render for image in images
@@ -148,8 +139,8 @@ class Ocicle
       @drag_state = 1
       @drag_screen_x = e.screenX
       @drag_screen_y = e.screenY
-      @drag_slide_x = @slide_x
-      @drag_slide_y = @slide_y
+      @drag_pan_x = @pan_x
+      @drag_pan_y = @pan_y
 
   on_mousemove: (e) =>
     if @drag_state >= 1
@@ -159,41 +150,40 @@ class Ocicle
         @drag_state = 2
       if @drag_state >= 2
         x =
-          start: @slide_x
-          end: @drag_slide_x + DRAG_FACTOR * move_x
-          set: @set_slide_x
+          start: @pan_x
+          end: @drag_pan_x + DRAG_FACTOR * move_x
+          set: @set_pan_x
         y =
-          start: @slide_y
-          end: @drag_slide_y + DRAG_FACTOR * move_y
-          set: @set_slide_y
-        @animate [x, y], 500
+          start: @pan_y
+          end: @drag_pan_y + DRAG_FACTOR * move_y
+          set: @set_pan_y
+        @animate [x, y], ANIMATE_MS
 
   on_mouseup: (e) =>
-    if e.relatedTarget and is_child @c, e.relatedTarget
-      return
     if @drag_state == 1
       e.preventDefault()
-      @do_zoom (if e.button == 0 then 2 else 1/2), e.clientX, e.clientY
+      @do_zoom (if e.button == 0 then ZOOM_FACTOR else 1/ZOOM_FACTOR),
+        e.clientX, e.clientY
     @drag_state = 0
 
-  do_zoom: (factor, clientx, clienty) =>
+  do_zoom: (factor, client_x, client_y) =>
     bounds = @c.getBoundingClientRect()
-    center_x = clientx - bounds.left - @c.clientLeft + @c.scrollLeft
-    center_y = clienty - bounds.top - @c.clientTop + @c.scrollTop
+    center_x = client_x - bounds.left - @c.clientLeft + @c.scrollLeft
+    center_y = client_y - bounds.top - @c.clientTop + @c.scrollTop
 
     size =
-      start: @slide_size
-      end: factor * @slide_size
-      set: @set_slide_size
+      start: @scale
+      end: @scale * factor
+      set: @set_scale
     x =
-      start: @slide_x
-      end: center_x - factor * (center_x - @slide_x)
-      set: @set_slide_x
+      start: @pan_x
+      end: center_x - factor * (center_x - @pan_x)
+      set: @set_pan_x
     y =
-      start: @slide_y
-      end: center_y - factor * (center_y - @slide_y)
-      set: @set_slide_y
-    @animate [size, x, y], 500
+      start: @pan_y
+      end: center_y - factor * (center_y - @pan_y)
+      set: @set_pan_y
+    @animate [size, x, y], ANIMATE_MS
 
   stop_animation: () ->
     cancelFrame @request_id if @request_id
@@ -224,14 +214,13 @@ class Ocicle
     cw = @c.width = @c.parentElement.clientWidth + 100
     ch = @c.height = @c.parentElement.clientHeight + 100
     ctx = @c.getContext '2d'
-    ctx.translate @slide_x, @slide_y
-    ctx.scale @slide_size, @slide_size
+    ctx.translate @pan_x, @pan_y
+    ctx.scale @scale, @scale
     ctx.strokeStyle = '#222'
     for i in @images
       ctx.strokeRect i.x, i.y, i.w, i.h
       ctx.drawImage i.dom, i.x, i.y, i.w, i.h
-    false
-
+    return
 
 
 

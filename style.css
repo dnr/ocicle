@@ -22,12 +22,12 @@ body {
 
 #leftcol {
 	float: left;
-	width: 9%;
+	width: 5%;
 }
 
 #leftcol a {
 	font-size: x-large;
-	margin: 1em;
+	margin: 1ex;
 	color: inherit;
 	text-decoration: none;
 }
