@@ -85,7 +85,8 @@ class Img
 
 class Ocicle
   constructor: (@c) ->
-    @c.style.overflow = 'hidden'
+    w = @c.previousElementSibling.getBoundingClientRect().width
+    @c.style.width = @c.parentElement.clientWidth - w - 1
 
     @slide = document.createElement 'div'
     @slide.className = 'slide'
@@ -229,7 +230,7 @@ log = (l) ->
   c.innerText = l
 
 on_load = () ->
-  window.ocicle = new Ocicle document.getElementById "c"
+  window.ocicle = new Ocicle document.getElementById 'c'
 #on_resize = () ->
 #  if window.ocicle then window.ocicle.on_resize()
 

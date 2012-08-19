@@ -38,20 +38,13 @@ body {
 
 .mainbox {
 	float: left;
-	width: 90%;
+	width: 89%;
 	height: 100%;
-	border-left: solid thin #555;
+	border-left: solid 1px #555;
 	position: relative;
+	overflow: hidden;
 }
 
 img {
 	border: 1px solid #222;
 }
-
-/*
-.slide {
-	-webkit-transition-property: left, top;
-	-webkit-transition-duration: 0.5s;
-	-webkit-transition-timing-function: ease-out;
-}
-*/
