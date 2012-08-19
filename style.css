@@ -20,31 +20,26 @@ body {
 	padding: 0;
 }
 
-.leftcol {
+#leftcol {
 	float: left;
 	width: 9%;
 }
 
-.leftcol a {
+#leftcol a {
 	font-size: x-large;
 	margin: 1em;
 	color: inherit;
 	text-decoration: none;
 }
 
-.leftcol a:hover {
+#leftcol a:hover {
 	text-decoration: underline;
 }
 
-.mainbox {
+#mainbox {
 	float: left;
 	width: 89%;
 	height: 100%;
 	border-left: solid 1px #555;
-	position: relative;
 	overflow: hidden;
-}
-
-img {
-	border: 1px solid #222;
 }

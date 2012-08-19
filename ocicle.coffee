@@ -19,84 +19,74 @@ IMAGES = [
   'p1030561_flat.jpg'
 ]
 IMAGEDIR = 'images'
-SLIDE_W = 2500
-SLIDE_H = 2500
 PADDING = 150
 DRAG_FACTOR = 2
 DRAG_THRESHOLD = 3
-ANIMATE_MS = 500
-ANIMATE_FRAMES = 30
 
+requestFrame = window.requestAnimationFrame       ||
+               window.webkitRequestAnimationFrame ||
+               window.mozRequestAnimationFrame    ||
+               window.oRequestAnimationFrame      ||
+               window.msRequestAnimationFrame     ||
+               (cb) -> window.setTimeout cb, 20
+cancelFrame = window.cancelAnimationFrame       ||
+              window.webkitCancelAnimationFrame ||
+              window.mozCancelAnimationFrame    ||
+              window.oCancelAnimationFrame      ||
+              window.msCancelAnimationFrame     ||
+              (id) -> window.clearTimeout id
 
 is_child = (parent, child) ->
   while child and child != parent
     child = child.parentNode
   return child == parent
 
-class Img
+class Image
   LOADING = 0
   READY = 1
   ERROR = 2
 
-  constructor: (@src) ->
+  constructor: (@src, @on_ready) ->
     @dom = document.createElement 'img'
-    @dom.style.position = 'absolute'
     @dom.src = src
     @dom.onload = () => @on_load true
     @dom.onerror = @dom.onabort = () => @on_load false
     @state = LOADING
-    @x = @y = 0
+    @base_x = @base_y = 0
     @nat_w = @nat_h = 100
     @req_w = @req_h = 100
     @w = @h = 100
+
+  ready: () -> @state == READY
 
   on_load: (success) ->
     if success
       @nat_w = @dom.naturalWidth
       @nat_h = @dom.naturalHeight
       @state = READY
-      @update_dom()
+      @update()
+      @on_ready()
     else
       @state = ERROR
 
-  update_dom: () ->
-    if @state == READY
+  update: () ->
+    if @ready()
       ratio = Math.min(@req_w / @nat_w, @req_h / @nat_h)
       @w = @nat_w * ratio
       @h = @nat_h * ratio
-      w_offset = (@req_w - @w) / 2
-      h_offset = (@req_h - @h) / 2
+      @x = @base_x + (@req_w - @w) / 2
+      @y = @base_y + (@req_h - @h) / 2
 
-      @dom.style.width = @w
-      @dom.style.height = @h
-      @dom.style.top = @y + h_offset
-      @dom.style.left = @x + w_offset
-      @dom.style.display = ''
-    else
-      @dom.style.display = 'none'
-
-  move: (@x, @y) ->
-    @update_dom()
-
-  resize: (@req_w, @req_h) ->
-    @update_dom()
+  move: (@base_x, @base_y) -> @update()
+  resize: (@req_w, @req_h) -> @update()
 
 
 
 class Ocicle
   constructor: (@c) ->
-    w = @c.previousElementSibling.getBoundingClientRect().width
-    @c.style.width = @c.parentElement.clientWidth - w - 1
-
-    @slide = document.createElement 'div'
-    @slide.className = 'slide'
-    @slide.style.position = 'relative'
-    @c.appendChild @slide
-
     @images = @load_images IMAGEDIR, IMAGES
-    @slide.appendChild image.dom for image in @images
-
     @reset()
+    @layout_images 2000, 2000
 
     @drag_state = 0
     @drag_screen_x = 0
@@ -110,21 +100,21 @@ class Ocicle
     @c.addEventListener 'mouseup', @on_mouseup, true
     @c.addEventListener 'mouseout', @on_mouseup, true
 
-  set_slide_x: (@slide_x) => @slide.style.left = @slide_x
-  set_slide_y: (@slide_y) => @slide.style.top = @slide_y
-  set_slide_size: (@slide_size) => @layout_images()
+  set_slide_x: (@slide_x) =>
+  set_slide_y: (@slide_y) =>
+  set_slide_size: (@slide_size) =>
 
   reset: () ->
     @stop_animation()
     @set_slide_x 0
     @set_slide_y 0
-    @set_slide_size 2000
+    @set_slide_size 1.0
+    @render()
 
   load_images: (prefix, images) ->
-    new Img (prefix + '/' + image) for image in images
+    new Image (prefix + '/' + image), @render for image in images
 
-  layout_images: () ->
-    totalw = totalh = @slide_size
+  layout_images: (totalw, totalh) ->
     padding = totalw / PADDING
 
     len = @images.length
@@ -149,7 +139,7 @@ class Ocicle
         @images[i].resize imgw, imgh
         i += 1
 
-    false
+    @render()
 
   on_mousedown: (e) =>
     if e.button == 0 or e.button == 2
@@ -176,7 +166,7 @@ class Ocicle
           start: @slide_y
           end: @drag_slide_y + DRAG_FACTOR * move_y
           set: @set_slide_y
-        @animate [x, y], ANIMATE_MS, ANIMATE_FRAMES
+        @animate [x, y], 500
 
   on_mouseup: (e) =>
     if e.relatedTarget and is_child @c, e.relatedTarget
@@ -203,24 +193,44 @@ class Ocicle
       start: @slide_y
       end: center_y - factor * (center_y - @slide_y)
       set: @set_slide_y
-    @animate [size, x, y], 1000, 20
+    @animate [size, x, y], 500
 
   stop_animation: () ->
-    window.clearTimeout @timeoutid if @timeoutid
+    cancelFrame @request_id if @request_id
 
-  animate: (props, ms, steps) ->
+  animate: (props, ms) ->
     @stop_animation()
-    start = Date.now() - ms/steps
+    start = Date.now() - 5
     fn = () =>
-      t = Math.min 1, (Date.now() - start) / ms
-      t = Math.pow t, 0.5
+      t = Math.sqrt (Math.min 1, (Date.now() - start) / ms)
       for prop in props
         prop.set prop.start * (1-t) + prop.end * t
-      @timeoutid = if t < 1 then window.setTimeout fn, ms/steps
-    @timeoutid = window.setTimeout fn, 0
+      @render()
+      @request_id = if t < 1 then requestFrame fn, @c
+    fn()
 
-#  on_resize: () ->
-#    false
+  on_resize: () ->
+    @render()
+
+  all_ready: () ->
+    for image in @images
+      if not image.ready()
+        return false
+    return true
+
+  render: () =>
+    if not @all_ready()
+      return
+    cw = @c.width = @c.parentElement.clientWidth + 100
+    ch = @c.height = @c.parentElement.clientHeight + 100
+    ctx = @c.getContext '2d'
+    ctx.translate @slide_x, @slide_y
+    ctx.scale @slide_size, @slide_size
+    ctx.strokeStyle = '#222'
+    for i in @images
+      ctx.strokeRect i.x, i.y, i.w, i.h
+      ctx.drawImage i.dom, i.x, i.y, i.w, i.h
+    false
 
 
 
@@ -229,11 +239,17 @@ log = (l) ->
   c = document.getElementById 'console'
   c.innerText = l
 
-on_load = () ->
-  window.ocicle = new Ocicle document.getElementById 'c'
-#on_resize = () ->
-#  if window.ocicle then window.ocicle.on_resize()
+on_resize = () ->
+  leftcol = document.getElementById 'leftcol'
+  mainbox = document.getElementById 'mainbox'
+  w = leftcol.getBoundingClientRect().width
+  mainbox.style.width = Math.floor mainbox.parentElement.clientWidth - w - 1
+  if window.ocicle then window.ocicle.on_resize()
 
+on_load = () ->
+  on_resize()
+  window.ocicle = new Ocicle document.getElementById 'c'
+
+window.addEventListener 'resize', on_resize, false
 window.addEventListener 'load', on_load, false
-#window.addEventListener 'resize', on_resize, false
 
