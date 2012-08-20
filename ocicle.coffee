@@ -1,5 +1,4 @@
 
-IMAGEDIR = 'images'
 PADDING = 150
 DRAG_FACTOR = 2
 DRAG_THRESHOLD = 3
@@ -91,7 +90,7 @@ class DZImage
     @pos = new ImagePosition @w, @h
 
   get_at_level: (level, x, y) ->
-    return IMAGEDIR + '/' + @name + '/' + level + '/' + x + '_' + y + '.jpg'
+    return @name + '/' + level + '/' + x + '_' + y + '.jpg'
 
   find_level: (dim) ->
     Math.ceil(Math.log(dim) / Math.LN2)
@@ -168,6 +167,19 @@ class Ocicle
   set_scale: (@scale) =>
 
   layout_images: (totalw, totalh) ->
+    find = (name) ->
+      for rec in POS
+        if rec.name == name
+          return rec
+    for i in @images
+      pos = find i.name
+      i.pos.x = pos.x
+      i.pos.y = pos.y
+      i.pos.w = pos.w
+      i.pos.h = pos.h
+    @render()
+    return
+
     padding = totalw / PADDING
     len = @images.length
 

@@ -1,6 +1,11 @@
-#!/bin/sh
-set -x
-rm -rf images
-mkdir images
-DeepZoomTiler -s -o images srcimages/*.jpg
-./dzlist.py
+#!/bin/bash
+set -ex
+dir="$1"
+test -d "$dir"
+for img in "$dir"/*.jpg; do
+	if [ ! "${img/.jpg/.xml}" -nt "$img" ]; then
+		DeepZoomTiler -quality 0.9 -s "$img"
+	fi
+done
+./dzlist.py "$dir"
+ln -sf "$dir"/images.js images.js

@@ -1,12 +1,13 @@
 #!/usr/bin/python
 
-import os, json
+import sys, os, json
 from xml.dom.minidom import parse
 
-os.chdir('images')
+path = sys.argv[1]
 
 data = []
-for fn in sorted(os.listdir('.')):
+for fn in sorted(os.listdir(path)):
+	fn = os.path.join(path, fn)
 	if not fn.endswith('.xml'):
 		continue
 	xml = parse(fn)
@@ -22,7 +23,7 @@ for fn in sorted(os.listdir('.')):
 		'ts': ts,
 		})
 
-with open('images.js', 'w') as f:
+with open(os.path.join(path, 'images.js'), 'w') as f:
 	f.write('window.IMAGES = ')
 	json.dump(data, f)
 	f.write(';\n')
