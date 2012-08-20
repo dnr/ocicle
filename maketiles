@@ -1,0 +1,6 @@
+#!/bin/sh
+set -x
+rm -rf images
+mkdir images
+DeepZoomTiler -s -o images srcimages/*.jpg
+./dzlist.py
