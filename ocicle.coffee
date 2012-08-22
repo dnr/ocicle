@@ -9,6 +9,7 @@ DRAG_FACTOR = 2
 DRAG_THRESHOLD = 3
 ZOOM_FACTOR = 2
 ANIMATE_MS = 500
+FAKE_DELAY = 800
 
 requestFrame = window.requestAnimationFrame       ||
                window.webkitRequestAnimationFrame ||
@@ -71,6 +72,26 @@ class ImagePosition
     @x = @y = 0
 
 
+class ImageLoader
+  constructor: (src) ->
+    @complete = false
+    @cbs = []
+    @dom = document.createElement 'img'
+    @dom.src = src
+    @dom.addEventListener 'load', if FAKE_DELAY then @_delay_onload else @_onload
+
+  add_cb: (cb) ->
+    @cbs.push cb
+
+  _delay_onload: () =>
+    window.setTimeout @_onload, FAKE_DELAY + 200 * Math.random()
+
+  _onload: () =>
+    @complete = true
+    cb @ for cb in @cbs
+    delete @cbs
+
+
 class DZImage
   constructor: (dz) ->
     @name = dz.name
@@ -94,43 +115,63 @@ class DZImage
     level = 1 + @find_level Math.max w, h
     level = Math.max level, @min_level
     level = Math.min level, @max_level
-    level_diff = @max_level - level
 
-    max_tiles = (1 << level) / @tile_size
-    factor = w / @w * Math.pow(2, level_diff)
-    ts = @tile_size * factor
+    source_scale = 1 << (@max_level - level)
+    level_w = @w / source_scale
+    level_h = @h / source_scale
 
-    for c in [0..max_tiles]
-      break if c * @tile_size > (@w >> level_diff)
+    draw_scale = w / level_w
+    draw_ts = @tile_size * draw_scale
 
-      for r in [0..max_tiles]
-        break if r * @tile_size > (@h >> level_diff)
+    for c in [0 .. level_w / @tile_size]
+
+      for r in [0 .. level_h / @tile_size]
 
         # ignore tiles outside of viewable area
-        draw_x = x + c * ts
-        draw_y = y + r * ts
+        draw_x = x + c * draw_ts
+        draw_y = y + r * draw_ts
         continue if draw_x > ctx.canvas.width or draw_y > ctx.canvas.height
-        continue if draw_x + ts < 0 or draw_y + ts < 0
+        continue if draw_x + draw_ts < 0 or draw_y + draw_ts < 0
 
-        draw = do (c, r) -> () ->
+        draw = do (c, r) -> (img) ->
           if ctx.ocicle_frame == frame
-            ctx.drawImage @,
-              x + c * ts,
-              y + r * ts,
-              @naturalWidth * factor,
-              @naturalHeight * factor
+            ctx.drawImage img.dom,
+              x + c * draw_ts,
+              y + r * draw_ts,
+              img.dom.naturalWidth * draw_scale,
+              img.dom.naturalHeight * draw_scale
 
         src = @get_at_level level, c, r
         img = tile_cache.get src
         if img?.complete
-          draw.call img
-        else if img
-          img.addEventListener 'load', draw
+          draw img
         else
-          img = document.createElement 'img'
-          tile_cache.put src, img
-          img.src = src
-          img.addEventListener 'load', draw
+          if not img
+            img = new ImageLoader src
+            tile_cache.put src, img
+          img.add_cb draw
+
+          # TODO: try to find higher scale copies first
+
+          # try a lower scale
+          for level2 in [level - 1 .. @min_level]
+            diff = level - level2
+            c2 = c >> diff
+            r2 = r >> diff
+            ts2 = @tile_size >> diff
+            src2 = @get_at_level level2, c2, r2
+            img2 = tile_cache.get src2
+            if img2?.complete
+              sx = ts2 * (c % (1 << diff))
+              sy = ts2 * (r % (1 << diff))
+              sw = Math.min ts2 + 2, img2.dom.naturalWidth - sx
+              sh = Math.min ts2 + 2, img2.dom.naturalHeight - sy
+              dx = x + c * draw_ts
+              dy = y + r * draw_ts
+              dw = sw * draw_scale * (1 << diff)
+              dh = sh * draw_scale * (1 << diff)
+              ctx.drawImage img2.dom, sx, sy, sw, sh, dx, dy, dw, dh
+              break
 
     return
 
@@ -144,12 +185,12 @@ class Ocicle
     @c.addEventListener 'mouseout', @on_mouseup, true
 
     @frame = 0
-    @tile_cache = new LruCache 100
     @images = (new DZImage dz for dz in IMAGES)
     @reset()
 
   reset: () ->
     @stop_animation()
+    @tile_cache = new LruCache 100
     @pan_x = @pan_y = 0
     @scale = @scale_target = 1.0
     @reset_image_positions()
