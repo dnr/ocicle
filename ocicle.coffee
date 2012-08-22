@@ -157,14 +157,9 @@ class Ocicle
 
   reset: () ->
     @stop_animation()
-    @set_pan_x 0
-    @set_pan_y 0
-    @set_scale 1.0
+    @pan_x = @pan_y = 0
+    @scale = @scale_target = 1.0
     @layout_images @c.parentElement.clientWidth, @c.parentElement.clientHeight
-
-  set_pan_x: (@pan_x) =>
-  set_pan_y: (@pan_y) =>
-  set_scale: (@scale) =>
 
   layout_images: (totalw, totalh) ->
     find = (name) ->
@@ -225,11 +220,11 @@ class Ocicle
         x =
           start: @pan_x
           end: @drag_pan_x + DRAG_FACTOR * move_x
-          set: @set_pan_x
+          set: (@pan_x) =>
         y =
           start: @pan_y
           end: @drag_pan_y + DRAG_FACTOR * move_y
-          set: @set_pan_y
+          set: (@pan_y) =>
         @animate [x, y], ANIMATE_MS
 
   on_mouseup: (e) =>
@@ -246,16 +241,16 @@ class Ocicle
 
     size =
       start: @scale
-      end: @scale * factor
-      set: @set_scale
+      end: @scale_target *= factor
+      set: (@scale) =>
     x =
       start: @pan_x
-      end: center_x - factor * (center_x - @pan_x)
-      set: @set_pan_x
+      end: center_x - @scale_target / @scale * factor * (center_x - @pan_x)
+      set: (@pan_x) =>
     y =
       start: @pan_y
-      end: center_y - factor * (center_y - @pan_y)
-      set: @set_pan_y
+      end: center_y - @scale_target / @scale * factor * (center_y - @pan_y)
+      set: (@pan_y) =>
     @animate [size, x, y], ANIMATE_MS
 
   stop_animation: () ->
