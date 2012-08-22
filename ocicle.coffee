@@ -1,4 +1,9 @@
 
+# TODO:
+# make smoother zoom by using cached images at different scale before
+# current scale has loaded.
+# integrate editor with viewer. how to make persistent?
+
 PADDING = 150
 DRAG_FACTOR = 2
 DRAG_THRESHOLD = 3
@@ -62,20 +67,8 @@ class LruCache
 
 
 class ImagePosition
-  constructor: (@nat_w, @nat_h) ->
-    @base_x = @base_y = 0
-    @req_w = @req_h = 100
-    @update()
-
-  update: () ->
-    ratio = Math.min(@req_w / @nat_w, @req_h / @nat_h)
-    @w = @nat_w * ratio
-    @h = @nat_h * ratio
-    @x = @base_x + (@req_w - @w) / 2
-    @y = @base_y + (@req_h - @h) / 2
-
-  move: (@base_x, @base_y) -> @update()
-  resize: (@req_w, @req_h) -> @update()
+  constructor: (@w, @h) ->
+    @x = @y = 0
 
 
 class DZImage
@@ -159,46 +152,13 @@ class Ocicle
     @stop_animation()
     @pan_x = @pan_y = 0
     @scale = @scale_target = 1.0
-    @layout_images @c.parentElement.clientWidth, @c.parentElement.clientHeight
+    @reset_image_positions()
+    @render()
 
-  layout_images: (totalw, totalh) ->
-    find = (name) ->
-      for rec in POS
-        if rec.name == name
-          return rec
+  reset_image_positions: () ->
     for i in @images
-      pos = find i.name
-      i.pos.x = pos.x
-      i.pos.y = pos.y
-      i.pos.w = pos.w
-      i.pos.h = pos.h
-    @render()
-    return
-
-    padding = totalw / PADDING
-    len = @images.length
-
-    cols = Math.ceil len / (Math.ceil Math.sqrt len)
-    paircols = cols + cols - 1
-    pairrows = Math.ceil (len / paircols)
-    rows = pairrows * 2
-    if len <= pairrows * paircols - cols + 1 then rows -= 1
-
-    boxw = totalw / cols
-    boxh = totalh / rows
-    imgw = boxw - 2 * padding
-    imgh = boxh - 2 * padding
-
-    i = 0
-    for r in [1..rows]
-      even = 1 - (r % 2)
-      for c in [1..cols - even]
-        if i >= len then break
-        @images[i].pos.move (c-1+even/2) * boxw + padding, (r-1) * boxh + padding
-        @images[i].pos.resize imgw, imgh
-        i += 1
-
-    @render()
+      pos = POS[i.name]
+      if pos then i.pos = pos
 
   on_mousedown: (e) =>
     if e.button == 0 or e.button == 2
@@ -245,11 +205,11 @@ class Ocicle
       set: (@scale) =>
     x =
       start: @pan_x
-      end: center_x - @scale_target / @scale * factor * (center_x - @pan_x)
+      end: center_x - @scale_target / @scale * (center_x - @pan_x)
       set: (@pan_x) =>
     y =
       start: @pan_y
-      end: center_y - @scale_target / @scale * factor * (center_y - @pan_y)
+      end: center_y - @scale_target / @scale * (center_y - @pan_y)
       set: (@pan_y) =>
     @animate [size, x, y], ANIMATE_MS
 

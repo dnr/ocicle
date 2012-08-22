@@ -185,16 +185,18 @@ class Ocicle
     ctx.clearRect 0, 0, cw, ch
     ctx.strokeStyle = '#222'  # for image frames
     ctx.lineWidth = 1
-    t = []
+    t = {}
     for i in @images
       x = i.pos.x
       y = i.pos.y
       w = i.pos.w
       h = i.pos.h
-      t.push({name:i.name,x:x,y:y,w:w,h:h})
+      t[i.name] = {x:x, y:y, w:w, h:h}
       ctx.strokeRect x, y, w, h
       i.render_onto_ctx ctx, @tile_cache, x, y, w, h
-    document.getElementById('console').value = JSON.stringify t
+    t = JSON.stringify t
+    t = 'window.POS = ' + t + ';'
+    document.getElementById('console').value = t
 
 
 on_resize = () ->
