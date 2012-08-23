@@ -5,10 +5,12 @@
 
 DRAG_FACTOR = 2
 DRAG_THRESHOLD = 3
-ZOOM_FACTOR = 2
+CLICK_ZOOM_FACTOR = 2
+WHEEL_ZOOM_FACTOR = Math.pow(2, 1/5)
 ANIMATE_MS = 500
 FRAME_WIDTH = 2
 FAKE_DELAY = 0 #800
+CENTER_BORDER = 30
 
 requestFrame = window.requestAnimationFrame       ||
                window.webkitRequestAnimationFrame ||
@@ -26,10 +28,9 @@ cancelFrame = window.cancelAnimationFrame       ||
 
 # adapted from https://gist.github.com/771192
 class LruCache
-  _has = Object.prototype.hasOwnProperty
-
   constructor: (@max_length) ->
     @map = {}
+    @_has = @map.hasOwnProperty.bind @map
     @length = 0
 
   _insert: (node) ->
@@ -39,7 +40,7 @@ class LruCache
       for key of @map
         # Depends on unspecified behavior, that JavaScript enumerates
         # objects in the order that the keys were inserted.
-        if _has.call @map, key
+        if @_has key
           @_remove @map[key]
           break
 
@@ -57,7 +58,7 @@ class LruCache
       undefined
 
   put: (key, value) ->
-    if _has.call @map, key
+    if @_has key
       node = @map[key]
       node[1] = value
       @_remove node
@@ -182,6 +183,8 @@ class Ocicle
     @c.addEventListener 'mousemove', @on_mousemove, true
     @c.addEventListener 'mouseup', @on_mouseup, true
     @c.addEventListener 'mouseout', @on_mouseup, true
+    @c.addEventListener 'mousewheel', @on_mousewheel, true
+    @c.addEventListener 'DOMMouseScroll', @on_mousewheel, true
 
     @frame = 0
     @last_now = @fps = 0
@@ -192,7 +195,7 @@ class Ocicle
     @stop_animation()
     @tile_cache = new LruCache 100
     @pan_x = @pan_y = 0
-    @scale = @scale_target = 1.0
+    @scale = @scale_target = 1
     @reset_image_positions()
     @render()
 
@@ -201,8 +204,17 @@ class Ocicle
       pos = POS[i.name]
       if pos then i.pos = pos
 
+  find_containing_image: (x, y) ->
+    bounds = @c.getBoundingClientRect()
+    x = (x - bounds.left - @pan_x) / @scale
+    y = (y - bounds.top - @pan_y) / @scale
+    for i in @images
+      if x >= i.pos.x and y >= i.pos.y and x <= i.pos.x + i.pos.w and y <= i.pos.y + i.pos.h
+        return i
+    return undefined
+
   on_mousedown: (e) =>
-    if e.button == 0 or e.button == 2
+    if e.button == 0 or e.button == 1 or e.button == 2
       e.preventDefault()
       @stop_animation()
       @drag_state = 1
@@ -218,41 +230,52 @@ class Ocicle
       if Math.abs(move_x) > DRAG_THRESHOLD or Math.abs(move_y) > DRAG_THRESHOLD
         @drag_state = 2
       if @drag_state >= 2
-        x =
-          start: @pan_x
-          end: @drag_pan_x + DRAG_FACTOR * move_x
-          set: (@pan_x) =>
-        y =
-          start: @pan_y
-          end: @drag_pan_y + DRAG_FACTOR * move_y
-          set: (@pan_y) =>
-        @animate [x, y], ANIMATE_MS
+        pan_x = @drag_pan_x + DRAG_FACTOR * move_x
+        pan_y = @drag_pan_y + DRAG_FACTOR * move_y
+        @navigate_to @scale, pan_x, pan_y
 
   on_mouseup: (e) =>
     if @drag_state == 1
       e.preventDefault()
-      @do_zoom (if e.button == 0 then ZOOM_FACTOR else 1/ZOOM_FACTOR),
-        e.clientX, e.clientY
+      if e.button == 0 or e.button == 2
+        factor = if e.button == 0 then CLICK_ZOOM_FACTOR else 1/CLICK_ZOOM_FACTOR
+        @do_zoom factor, e.clientX, e.clientY
+      else if e.button == 1
+        # center around image
+        i = @find_containing_image e.clientX, e.clientY
+        if i
+          scale = Math.min (@c.width - CENTER_BORDER) / i.pos.w,
+                           (@c.height - CENTER_BORDER) / i.pos.h
+          pan_x = @c.width / 2 - (i.pos.x + i.pos.w / 2) * scale
+          pan_y = @c.height / 2 - (i.pos.y + i.pos.h / 2) * scale
+          @navigate_to scale, pan_x, pan_y
     @drag_state = 0
+
+  on_mousewheel: (e) =>
+    e.preventDefault()
+    if e.wheelDelta
+      factor = if e.wheelDelta > 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
+    else
+      factor = if e.detail < 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
+    @do_zoom factor, e.clientX, e.clientY
 
   do_zoom: (factor, client_x, client_y) =>
     bounds = @c.getBoundingClientRect()
-    center_x = client_x - bounds.left - @c.clientLeft + @c.scrollLeft
-    center_y = client_y - bounds.top - @c.clientTop + @c.scrollTop
+    center_x = client_x - bounds.left
+    center_y = client_y - bounds.top
 
-    size =
-      start: @scale
-      end: @scale_target *= factor
-      set: (@scale) =>
-    x =
-      start: @pan_x
-      end: center_x - @scale_target / @scale * (center_x - @pan_x)
-      set: (@pan_x) =>
-    y =
-      start: @pan_y
-      end: center_y - @scale_target / @scale * (center_y - @pan_y)
-      set: (@pan_y) =>
-    @animate [size, x, y], ANIMATE_MS
+    @scale_target *= factor
+    pan_x = center_x - @scale_target / @scale * (center_x - @pan_x)
+    pan_y = center_y - @scale_target / @scale * (center_y - @pan_y)
+    @navigate_to @scale_target, pan_x, pan_y
+
+  navigate_to: (scale, pan_x, pan_y) ->
+    props = [
+      {start: @pan_x, end: pan_x, set: (@pan_x) =>}
+      {start: @pan_y, end: pan_y, set: (@pan_y) =>}
+      {start: @scale, end: @scale_target = scale, set: (@scale) =>}
+    ]
+    @animate props, ANIMATE_MS
 
   stop_animation: () ->
     cancelFrame @request_id if @request_id
@@ -260,13 +283,13 @@ class Ocicle
   animate: (props, ms) ->
     @stop_animation()
     start = Date.now() - 5
-    fn = () =>
+    frame = () =>
       t = Math.sqrt (Math.min 1, (Date.now() - start) / ms)
       for prop in props
         prop.set prop.start * (1-t) + prop.end * t
       @render()
       @request_id = if t < 1 then requestFrame fn, @c
-    fn()
+    frame()
 
   on_resize: () ->
     @render()
@@ -285,6 +308,7 @@ class Ocicle
 
     # image frames
     lw = Math.max 1, FRAME_WIDTH * @scale
+    shadow = Math.max 1, FRAME_WIDTH * @scale / 2
     lw2 = 2 * lw
     ctx.save()
     ctx.lineWidth = lw
@@ -295,7 +319,7 @@ class Ocicle
       h = i.pos.h * @scale
       continue if x - lw2 > cw or y - lw2 > ch or x + w < -lw2 or y + h < -lw2
       ctx.strokeStyle = 'hsl(210,5%,15%)'
-      ctx.strokeRect x + FRAME_WIDTH * @scale / 2, y + FRAME_WIDTH * @scale / 2, w, h
+      ctx.strokeRect x + shadow, y + shadow, w, h
       ctx.strokeStyle = 'hsl(210,5%,5%)'
       ctx.strokeRect x, y, w, h
       calls.push([i, x, y, w, h])
@@ -309,12 +333,14 @@ class Ocicle
     now = Date.now()
     ms = now - @last_now
     @fps = (1000 / ms + @fps * 4) / 5
-    document.getElementById('fps').innerText = 0 | @fps
+    set_text 'fps', ~~(@fps + .5)
     @last_now = now
+    scale = Math.log(@scale) / Math.LN2
+    set_text 'zoom', ~~(10 * scale + .5) / 10
 
 
-
-log = (id, l) -> (document.getElementById id).innerText = l
+set_text = (id, t) ->
+  document.getElementById(id).innerText = t
 
 on_resize = () ->
   leftcol = document.getElementById 'leftcol'

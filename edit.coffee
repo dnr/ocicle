@@ -129,6 +129,9 @@ class Ocicle
     @render()
 
   find_containing_image: (x, y) ->
+    rect = @c.getBoundingClientRect()
+    x -= rect.left
+    y -= rect.top
     @images.reverse()
     for i in @images
       if x >= i.pos.x and y >= i.pos.y and x <= i.pos.x + i.pos.w and y <= i.pos.y + i.pos.h
@@ -140,10 +143,7 @@ class Ocicle
   on_mousedown: (e) =>
     if e.button == 0 or e.button == 2
       e.preventDefault()
-      rect = @c.getBoundingClientRect()
-      x = e.clientX - rect.left
-      y = e.clientY - rect.top
-      @drag_img = @find_containing_image x, y
+      @drag_img = @find_containing_image e.clientX, e.clientY
       if @drag_img
         @images.splice (@images.indexOf @drag_img), 1
         @images.push @drag_img
