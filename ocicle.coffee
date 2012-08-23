@@ -1,15 +1,14 @@
 
 # TODO:
-# make smoother zoom by using cached images at different scale before
-# current scale has loaded.
+# generalize scale stuff.
 # integrate editor with viewer. how to make persistent?
 
-PADDING = 150
 DRAG_FACTOR = 2
 DRAG_THRESHOLD = 3
 ZOOM_FACTOR = 2
 ANIMATE_MS = 500
-FAKE_DELAY = 800
+FRAME_WIDTH = 2
+FAKE_DELAY = 0 #800
 
 requestFrame = window.requestAnimationFrame       ||
                window.webkitRequestAnimationFrame ||
@@ -185,6 +184,7 @@ class Ocicle
     @c.addEventListener 'mouseout', @on_mouseup, true
 
     @frame = 0
+    @last_now = @fps = 0
     @images = (new DZImage dz for dz in IMAGES)
     @reset()
 
@@ -280,17 +280,37 @@ class Ocicle
     ctx = @c.getContext '2d'
     ctx.ocicle_frame = @frame++
     ctx.clearRect 0, 0, cw, ch
-    ctx.strokeStyle = '#222'  # for image frames
-    ctx.lineWidth = Math.max 1, @scale
+
+    calls = []
+
+    # image frames
+    lw = Math.max 1, FRAME_WIDTH * @scale
+    lw2 = 2 * lw
+    ctx.save()
+    ctx.lineWidth = lw
     for i in @images
       x = i.pos.x * @scale + @pan_x
       y = i.pos.y * @scale + @pan_y
       w = i.pos.w * @scale
       h = i.pos.h * @scale
-      continue if x > cw or y > ch or x + w < 0 or y + h < 0
+      continue if x - lw2 > cw or y - lw2 > ch or x + w < -lw2 or y + h < -lw2
+      ctx.strokeStyle = 'hsl(210,5%,15%)'
+      ctx.strokeRect x + FRAME_WIDTH * @scale / 2, y + FRAME_WIDTH * @scale / 2, w, h
+      ctx.strokeStyle = 'hsl(210,5%,5%)'
       ctx.strokeRect x, y, w, h
+      calls.push([i, x, y, w, h])
+    ctx.restore()
+
+    # images
+    for [i, x, y, w, h] in calls
       i.render_onto_ctx ctx, @tile_cache, x, y, w, h
-    return
+
+    # update fps
+    now = Date.now()
+    ms = now - @last_now
+    @fps = (1000 / ms + @fps * 4) / 5
+    document.getElementById('fps').innerText = 0 | @fps
+    @last_now = now
 
 
 

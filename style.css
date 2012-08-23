@@ -3,17 +3,17 @@ body {
 	/* Old browsers */
 	background: #373a3d;
 	/* FF3.6+ */
-	background: -moz-linear-gradient(-45deg, hsl(210,5%,23%) 0%, hsl(0,0%,0%) 100%);
+	background: -moz-linear-gradient(-45deg, hsl(210,5%,30%) 0%, hsl(210,5%,15%) 100%);
 	/* Chrome, Safari4+ */
-	background: -webkit-gradient(linear, left top, right bottom, color-stop(0%, hsl(210,5%,23%)), color-stop(100%, hsl(0,0%,0%)));
+	background: -webkit-gradient(linear, left top, right bottom, color-stop(0%, hsl(210,5%,30%)), color-stop(100%, hsl(210,5%,15%)));
 	/* Chrome10+, Safari5.1+ */
-	background: -webkit-linear-gradient(-45deg, hsl(210,5%,23%) 0%,hsl(0,0%,0%) 100%);
+	background: -webkit-linear-gradient(-45deg, hsl(210,5%,30%) 0%,hsl(210,5%,15%) 100%);
 	/* Opera 11.10+ */
-	background: -o-linear-gradient(-45deg, hsl(210,5%,23%) 0%, hsl(0,0%,0%) 100%);
+	background: -o-linear-gradient(-45deg, hsl(210,5%,30%) 0%, hsl(210,5%,15%) 100%);
 	/* IE10+ */
-	background: -ms-linear-gradient(-45deg, hsl(210,5%,23%) 0%, hsl(0,0%,0%) 100%);
+	background: -ms-linear-gradient(-45deg, hsl(210,5%,30%) 0%, hsl(210,5%,15%) 100%);
 	/* W3C */
-	background: linear-gradient(135deg, hsl(210,5%,23%) 0%, hsl(0,0%,0%) 100%);
+	background: linear-gradient(135deg, hsl(210,5%,30%) 0%, hsl(210,5%,15%) 100%);
 
 	color: #eee;
 	margin: 0;
@@ -40,6 +40,6 @@ body {
 	float: left;
 	width: 89%;
 	height: 100%;
-	border-left: solid 1px #555;
+	border-left: solid 1px #080808;
 	overflow: hidden;
 }
