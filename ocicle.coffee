@@ -288,7 +288,7 @@ class Ocicle
       for prop in props
         prop.set prop.start * (1-t) + prop.end * t
       @render()
-      @request_id = if t < 1 then requestFrame fn, @c
+      @request_id = if t < 1 then requestFrame frame, @c
     frame()
 
   on_resize: () ->
