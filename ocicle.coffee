@@ -12,6 +12,7 @@ ANIMATE_MS = 500
 FRAME_WIDTH = 2
 FAKE_DELAY = 0 #800
 CENTER_BORDER = 30
+PREFETCH_BORDER = 200
 
 requestFrame = window.requestAnimationFrame       ||
                window.webkitRequestAnimationFrame ||
@@ -25,6 +26,11 @@ cancelFrame = window.cancelAnimationFrame       ||
               window.oCancelAnimationFrame      ||
               window.msCancelAnimationFrame     ||
               (id) -> window.clearTimeout id
+
+
+rect_is_outside = (c, x, y, w, h, border=PREFETCH_BORDER) ->
+  x + w < -border          or y + h < -border or
+      x > c.width + border or     y > c.height + border
 
 
 # adapted from https://gist.github.com/771192
@@ -141,10 +147,8 @@ class DZImage
     for c in [0 .. max_c]
       for r in [0 .. max_r]
         # ignore tiles outside of viewable area
-        draw_x = x + c * draw_ts
-        draw_y = y + r * draw_ts
-        continue if draw_x > ctx.canvas.width or draw_y > ctx.canvas.height
-        continue if draw_x + draw_ts < 0 or draw_y + draw_ts < 0
+        continue if rect_is_outside(ctx.canvas,
+          x + c * draw_ts, y + r * draw_ts, draw_ts, draw_ts)
 
         # draw from most detailed level
         for level2 in [level .. @min_level]
@@ -294,7 +298,6 @@ class Ocicle
     # image frames
     lw = Math.max 1, FRAME_WIDTH * @scale
     shadow = Math.max 1, FRAME_WIDTH * @scale / 2
-    lw2 = 2 * lw
     ctx.save()
     ctx.lineWidth = lw
     for i in @images
@@ -302,7 +305,7 @@ class Ocicle
       y = i.pos.y * @scale + @pan_y
       w = i.pos.w * @scale
       h = i.pos.h * @scale
-      continue if x - lw2 > cw or y - lw2 > ch or x + w < -lw2 or y + h < -lw2
+      continue if rect_is_outside @c, x, y, w, h
       ctx.strokeStyle = 'hsl(210,5%,15%)'
       ctx.strokeRect x + shadow, y + shadow, w, h
       ctx.strokeStyle = 'hsl(210,5%,5%)'
@@ -317,7 +320,7 @@ class Ocicle
     # update fps
     now = Date.now()
     ms = now - @last_now
-    @fps = (1000 / ms + @fps * 4) / 5
+    @fps = (1000 / ms + @fps * 9) / 10
     set_text 'fps', ~~(@fps + .5)
     @last_now = now
     scale = Math.log(@scale) / Math.LN2
