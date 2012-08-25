@@ -1,6 +1,7 @@
 
 # TODO:
-# generalize scale stuff.
+# use more detailed scales when zooming out.
+# non-rectangular frames/clipping regions.
 # integrate editor with viewer. how to make persistent?
 
 DRAG_FACTOR = 2
@@ -109,71 +110,55 @@ class DZImage
   find_level: (dim) ->
     Math.ceil(Math.log(dim) / Math.LN2)
 
+  clip_level: (level) ->
+    Math.min(Math.max(level, @min_level), @max_level)
+
   render_onto_ctx: (ctx, tile_cache, x, y, w, h) ->
     frame = ctx.ocicle_frame
+    tile_size = @tile_size
 
-    level = 1 + @find_level Math.max w, h
-    level = Math.max level, @min_level
-    level = Math.min level, @max_level
-
+    level = @clip_level 1 + @find_level Math.max w, h
     source_scale = 1 << (@max_level - level)
-    level_w = @w / source_scale
-    level_h = @h / source_scale
+    max_c = @w / source_scale / tile_size
+    max_r = @h / source_scale / tile_size
+    # this assumes the aspect ratio is preserved:
+    draw_scale = w / @w * source_scale
+    draw_ts = tile_size * draw_scale
 
-    draw_scale = w / level_w
-    draw_ts = @tile_size * draw_scale
+    draw = (img, c, r, diff) ->
+      return if ctx.ocicle_frame != frame
+      ts = tile_size >> diff
+      sx = ts * (c % (1 << diff))
+      sy = ts * (r % (1 << diff))
+      sw = Math.min ts + 2, img.dom.naturalWidth - sx
+      sh = Math.min ts + 2, img.dom.naturalHeight - sy
+      dx = x + c * draw_ts
+      dy = y + r * draw_ts
+      dw = sw * draw_scale * (1 << diff)
+      dh = sh * draw_scale * (1 << diff)
+      ctx.drawImage img.dom, sx, sy, sw, sh, dx, dy, dw, dh
 
-    for c in [0 .. level_w / @tile_size]
-
-      for r in [0 .. level_h / @tile_size]
-
+    for c in [0 .. max_c]
+      for r in [0 .. max_r]
         # ignore tiles outside of viewable area
         draw_x = x + c * draw_ts
         draw_y = y + r * draw_ts
         continue if draw_x > ctx.canvas.width or draw_y > ctx.canvas.height
         continue if draw_x + draw_ts < 0 or draw_y + draw_ts < 0
 
-        draw = do (c, r) -> (img) ->
-          if ctx.ocicle_frame == frame
-            ctx.drawImage img.dom,
-              x + c * draw_ts,
-              y + r * draw_ts,
-              img.dom.naturalWidth * draw_scale,
-              img.dom.naturalHeight * draw_scale
-
-        src = @get_at_level level, c, r
-        img = tile_cache.get src
-        if img?.complete
-          draw img
-        else
-          if not img
-            img = new ImageLoader src
-            tile_cache.put src, img
-          img.add_cb draw
-
-          # TODO: try to find higher scale copies first
-
-          # try a lower scale
-          for level2 in [level - 1 .. @min_level]
-            diff = level - level2
-            c2 = c >> diff
-            r2 = r >> diff
-            ts2 = @tile_size >> diff
-            src2 = @get_at_level level2, c2, r2
-            img2 = tile_cache.get src2
-            if img2?.complete
-              sx = ts2 * (c % (1 << diff))
-              sy = ts2 * (r % (1 << diff))
-              sw = Math.min ts2 + 2, img2.dom.naturalWidth - sx
-              sh = Math.min ts2 + 2, img2.dom.naturalHeight - sy
-              dx = x + c * draw_ts
-              dy = y + r * draw_ts
-              dw = sw * draw_scale * (1 << diff)
-              dh = sh * draw_scale * (1 << diff)
-              ctx.drawImage img2.dom, sx, sy, sw, sh, dx, dy, dw, dh
-              break
-
-    return
+        # draw from most detailed level
+        for level2 in [level .. @min_level]
+          diff = level - level2
+          src = @get_at_level level2, c >> diff, r >> diff
+          img = tile_cache.get src
+          if img?.complete
+            draw img, c, r, diff
+            break
+          else if level2 == level
+            if not img
+              img = new ImageLoader src
+              tile_cache.put src, img
+            img.add_cb do (c, r, diff) -> (img) -> draw img, c, r, diff
 
 
 class Ocicle
