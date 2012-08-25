@@ -250,12 +250,12 @@ class Ocicle
 
   do_zoom: (factor, client_x, client_y) =>
     bounds = @c.getBoundingClientRect()
-    center_x = client_x - bounds.left
-    center_y = client_y - bounds.top
+    center_x = client_x - bounds.left - @c.width / 2
+    center_y = client_y - bounds.top - @c.height / 2
 
     @scale_target *= factor
-    pan_x = center_x - @scale_target / @scale * (center_x - @pan_x)
-    pan_y = center_y - @scale_target / @scale * (center_y - @pan_y)
+    pan_x = @pan_x - center_x / @scale + center_x / @scale_target
+    pan_y = @pan_y - center_y / @scale + center_y / @scale_target
     @navigate_to @scale_target, pan_x, pan_y
 
   navigate_to: (scale, pan_x, pan_y) ->
@@ -301,8 +301,8 @@ class Ocicle
     ctx.save()
     ctx.lineWidth = lw
     for i in @images
-      x = i.pos.x * @scale + @pan_x
-      y = i.pos.y * @scale + @pan_y
+      x = (i.pos.x + @pan_x) * @scale + cw / 2
+      y = (i.pos.y + @pan_y) * @scale + ch / 2
       w = i.pos.w * @scale
       h = i.pos.h * @scale
       continue if rect_is_outside @c, x, y, w, h
