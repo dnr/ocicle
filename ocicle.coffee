@@ -142,20 +142,18 @@ class ImageLoader
 
 
 class DZImage
-  constructor: (dz) ->
-    @src = dz.src
-    @w = dz.w
-    @h = dz.h
-    @tile_size = dz.ts
-    @min_level = @find_level @tile_size / 2
+  constructor: (@meta) ->
+    @w = @meta.w
+    @h = @meta.h
+    @min_level = @find_level @meta.ts / 2
     @max_level = @find_level Math.max @w, @h
-    @px = dz.px
-    @py = dz.py
-    @pw = dz.pw
+    @px = @meta.px
+    @py = @meta.py
+    @pw = @meta.pw
     @ph = @h * @pw / @w
 
   get_at_level: (level, x, y) ->
-    return @src + '/' + level + '/' + x + '_' + y + '.jpg'
+    return @meta.src + '/' + level + '/' + x + '_' + y + '.jpg'
 
   find_level: (dim) ->
     Math.ceil(Math.log(dim) / Math.LN2)
@@ -165,7 +163,7 @@ class DZImage
 
   render_onto_ctx: (ctx, tile_cache, x, y, w, h) ->
     frame = ctx.ocicle_frame
-    tile_size = @tile_size
+    tile_size = @meta.ts
 
     level = @clip_level 1 + @find_level Math.max w, h
     source_scale = 1 << (@max_level - level)
@@ -230,6 +228,14 @@ class Ocicle
     @pan_x = @pan_y = 0
     @scale = @scale_target = 1
     @render()
+
+  edit: () ->
+    document.getElementById('desc').style.display = 'none'
+    edit = document.getElementById('descedit')
+    edit.style.display = 'block'
+    edit.addEventListener 'input', () =>
+      if @highlight_image
+        @highlight_image.meta.desc = edit.value
 
   find_containing_image: (x, y) ->
     bounds = @c.getBoundingClientRect()
@@ -323,15 +329,20 @@ class Ocicle
 
   render: () ->
     cw = @c.parentElement.clientWidth
-    if @c.width < cw then @c.width = cw
+    if @c.width != cw then @c.width = cw
     ch = @c.parentElement.clientHeight
-    if @c.height < ch then @c.height = ch
+    if @c.height != ch then @c.height = ch
 
     ctx = @c.getContext '2d'
     ctx.ocicle_frame = @frame++
     ctx.clearRect 0, 0, cw, ch
 
     calls = []
+
+    @highlight_image = @find_containing_image cw/2, ch/2
+    desc = if @highlight_image then @highlight_image.meta.desc else ''
+    set_text 'desc', desc
+    document.getElementById('descedit').value = desc
 
     # image frames
     lw = Math.max 1, FRAME_WIDTH * @scale
@@ -369,10 +380,6 @@ set_text = (id, t) ->
   document.getElementById(id).innerText = t
 
 on_resize = () ->
-  leftcol = document.getElementById 'leftcol'
-  mainbox = document.getElementById 'mainbox'
-  w = leftcol.getBoundingClientRect().width
-  mainbox.style.width = Math.floor mainbox.parentElement.clientWidth - w - 1
   if window.ocicle then window.ocicle.on_resize()
 
 on_load = () ->

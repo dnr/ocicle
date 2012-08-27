@@ -5,16 +5,19 @@
 		<script src='ocicle.js'></script>
 	</head>
 	<body>
-		<div id='leftcol'>
-			<div>
-			<a href='javascript:ocicle.reset()'>reset</a>
-			</div>
+		<div id='topbar'>
+			<div><a href='javascript:ocicle.reset()'>reset</a></div>
+			<div><a href='javascript:ocicle.edit()'>edit</a></div>
+			<div><a href='javascript:ocicle.meta.save()'>save</a></div>
 			<div>zoom: <span id='zoom'></span></div>
 			<div>fps: <span id='fps'></span></div>
-			<div id='console'></div>
 		</div>
 		<div id='mainbox'>
 			<canvas id='c'></canvas>
+		</div>
+		<div id='bottombar'>
+			<div id='desc'></div>
+			<textarea id='descedit' style='display:none'></textarea>
 		</div>
 	</body>
 </html>

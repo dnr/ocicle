@@ -18,28 +18,45 @@ body {
 	color: #eee;
 	margin: 0;
 	padding: 0;
+	overflow: hidden;
 }
 
-#leftcol {
-	float: left;
-	width: 5%;
-}
-
-#leftcol a {
-	font-size: x-large;
-	margin: 1ex;
+a {
 	color: inherit;
 	text-decoration: none;
 }
 
-#leftcol a:hover {
+a:hover {
 	text-decoration: underline;
 }
 
+#topbar {
+	float: top;
+	width: 100%;
+	font-size: x-large;
+	height: 4%;
+	background: #181818;
+}
+
+#topbar > div {
+	display: inline-block;
+	padding-left: 2em;
+}
+
 #mainbox {
-	float: left;
-	width: 89%;
-	height: 100%;
-	border-left: solid 1px #080808;
-	overflow: hidden;
+	float: top;
+	width: 100%;
+	height: 86%;
+}
+
+#bottombar {
+	float: top;
+	width: 100%;
+	height: 10%;
+	background: #181818;
+}
+
+#desc {
+	padding: 1ex;
+	text-align: center;
 }
