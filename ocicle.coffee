@@ -2,7 +2,7 @@
 # TODO:
 # use more detailed scales when zooming out.
 # non-rectangular frames/clipping regions.
-# integrate editor with viewer. how to make persistent?
+# resize top and bottom bars based on font size.
 
 DRAG_FACTOR = 2
 DRAG_THRESHOLD = 3
@@ -76,8 +76,8 @@ class Metadata
     @storage.get 'meta', (value) =>
       @data = value
       if @client_cb then @client_cb @
-  save: () ->
-    @storage.set 'meta', @data
+  save: (cb) ->
+    @storage.set 'meta', @data, cb
 
 
 # adapted from https://gist.github.com/771192
@@ -152,8 +152,16 @@ class DZImage
     @pw = @meta.pw
     @ph = @h * @pw / @w
 
+  move: (@px, @py) ->
+    @meta.px = @px
+    @meta.py = @py
+
+  scale: (@pw) ->
+    @meta.pw = @pw
+    @ph = @h * @pw / @w
+
   get_at_level: (level, x, y) ->
-    return @meta.src + '/' + level + '/' + x + '_' + y + '.jpg'
+    @meta.src + '/' + level + '/' + x + '_' + y + '.jpg'
 
   find_level: (dim) ->
     Math.ceil(Math.log(dim) / Math.LN2)
@@ -209,13 +217,18 @@ class DZImage
 
 class Ocicle
   constructor: (@c, @meta) ->
-    @c.addEventListener 'mousedown', @on_mousedown, true
-    @c.addEventListener 'contextmenu', @on_mousedown, true
-    @c.addEventListener 'mousemove', @on_mousemove, true
-    @c.addEventListener 'mouseup', @on_mouseup, true
-    @c.addEventListener 'mouseout', @on_mouseup, true
-    @c.addEventListener 'mousewheel', @on_mousewheel, true
-    @c.addEventListener 'DOMMouseScroll', @on_mousewheel, true
+    @editmode = false
+
+    add_event = (events, method) =>
+      edit_switch = () =>
+        interaction = if @editmode then interaction_edit else interaction_normal
+        interaction[method].apply @, arguments
+      for event in events
+        @c.addEventListener event, edit_switch, true
+    add_event ['mousedown', 'contextmenu'], 'mousedown'
+    add_event ['mousemove'], 'mousemove'
+    add_event ['mouseup', 'mouseout'], 'mouseup'
+    add_event ['mousewheel', 'DOMMouseScroll'], 'mousewheel'
 
     @frame = 0
     @last_now = @fps = 0
@@ -230,69 +243,123 @@ class Ocicle
     @render()
 
   edit: () ->
-    document.getElementById('desc').style.display = 'none'
-    edit = document.getElementById('descedit')
-    edit.style.display = 'block'
-    edit.addEventListener 'input', () =>
-      if @highlight_image
-        @highlight_image.meta.desc = edit.value
+    editlink = document.getElementById('editlink')
+    if @editmode
+      editlink.innerText = 'save...'
+      @meta.save (success) ->
+        editlink.innerText = if success then 'save' else 'save (error)'
+    else
+      @editmode = true
+      editlink.innerText = 'save'
+      document.getElementById('desc').style.display = 'none'
+      document.body.style.background = '#007AA3'
+      edit = document.getElementById('descedit')
+      edit.style.display = 'block'
+      edit.addEventListener 'input', () =>
+        if @highlight_image
+          @highlight_image.meta.desc = edit.value
 
-  find_containing_image: (x, y) ->
+  find_containing_image_screen: (x, y) ->
     bounds = @c.getBoundingClientRect()
-    x = (x - bounds.left - @pan_x) / @scale
-    y = (y - bounds.top - @pan_y) / @scale
+    @find_containing_image_canvas x - bounds.left, y - bounds.top
+
+  find_containing_image_canvas: (x, y) ->
+    x = (x - @pan_x) / @scale
+    y = (y - @pan_y) / @scale
     for i in @images
       if x >= i.px and y >= i.py and x <= i.px + i.pw and y <= i.py + i.ph
         return i
-    return undefined
+    null
 
-  on_mousedown: (e) =>
-    if e.button == 0 or e.button == 1 or e.button == 2
+  interaction_normal =
+    mousedown: (e) ->
+      if e.button == 0 or e.button == 1 or e.button == 2
+        e.preventDefault()
+        @stop_animation()
+        @drag_state = 1
+        @drag_screen_x = e.screenX
+        @drag_screen_y = e.screenY
+        @drag_pan_x = @pan_x
+        @drag_pan_y = @pan_y
+
+    mousemove: (e) ->
+      if @drag_state >= 1
+        move_x = e.screenX - @drag_screen_x
+        move_y = e.screenY - @drag_screen_y
+        if Math.abs(move_x) > DRAG_THRESHOLD or Math.abs(move_y) > DRAG_THRESHOLD
+          @drag_state = 2
+        if @drag_state >= 2
+          pan_x = @drag_pan_x + DRAG_FACTOR * move_x
+          pan_y = @drag_pan_y + DRAG_FACTOR * move_y
+          @navigate_to @scale, pan_x, pan_y
+
+    mouseup: (e) ->
+      if @drag_state == 1
+        e.preventDefault()
+        if e.button == 0 or e.button == 2
+          factor = if e.button == 0 then CLICK_ZOOM_FACTOR else 1/CLICK_ZOOM_FACTOR
+          @do_zoom factor, e.clientX, e.clientY
+        else if e.button == 1
+          # center around image
+          i = @find_containing_image_screen e.clientX, e.clientY
+          if i
+            scale = Math.min (@c.width - CENTER_BORDER) / i.pw,
+                             (@c.height - CENTER_BORDER) / i.ph
+            pan_x = @c.width / 2 - (i.px + i.pw / 2) * scale
+            pan_y = @c.height / 2 - (i.py + i.ph / 2) * scale
+            @navigate_to scale, pan_x, pan_y
+      @drag_state = 0
+
+    mousewheel: (e) ->
+      e.preventDefault()
+      if e.wheelDelta
+        factor = if e.wheelDelta > 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
+      else
+        factor = if e.detail < 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
+      @do_zoom factor, e.clientX, e.clientY
+
+  interaction_edit =
+    # drag states:
+    #  1: pan
+    #  2/3/4: left/right/middle button on image
+    mousedown: (e) ->
       e.preventDefault()
       @stop_animation()
-      @drag_state = 1
       @drag_screen_x = e.screenX
       @drag_screen_y = e.screenY
-      @drag_pan_x = @pan_x
-      @drag_pan_y = @pan_y
+      @drag_img = @find_containing_image_screen e.clientX, e.clientY
+      if @drag_img
+        @drag_state = 2 + e.button
+        @drag_px = @drag_img.px
+        @drag_py = @drag_img.py
+        @drag_pw = @drag_img.pw
+      else
+        @drag_state = 1
+        @drag_pan_x = @pan_x
+        @drag_pan_y = @pan_y
 
-  on_mousemove: (e) =>
-    if @drag_state >= 1
+    mousemove: (e) ->
+      if @drag_state == 0 then return
       move_x = e.screenX - @drag_screen_x
       move_y = e.screenY - @drag_screen_y
-      if Math.abs(move_x) > DRAG_THRESHOLD or Math.abs(move_y) > DRAG_THRESHOLD
-        @drag_state = 2
-      if @drag_state >= 2
-        pan_x = @drag_pan_x + DRAG_FACTOR * move_x
-        pan_y = @drag_pan_y + DRAG_FACTOR * move_y
-        @navigate_to @scale, pan_x, pan_y
+      if @drag_state == 1  # pan
+        @pan_x = @drag_pan_x + DRAG_FACTOR * move_x
+        @pan_y = @drag_pan_y + DRAG_FACTOR * move_y
+      else if @drag_state == 2  # left button on image
+        @drag_img.move @drag_px + move_x / @scale,
+                       @drag_py + move_y / @scale
+      else if @drag_state == 3  # middle button on image
+        false
+      else if @drag_state == 4  # right button on image
+        @drag_img.scale @drag_pw * Math.pow(1.002, move_x+move_y)
+      @render()
 
-  on_mouseup: (e) =>
-    if @drag_state == 1
-      e.preventDefault()
-      if e.button == 0 or e.button == 2
-        factor = if e.button == 0 then CLICK_ZOOM_FACTOR else 1/CLICK_ZOOM_FACTOR
-        @do_zoom factor, e.clientX, e.clientY
-      else if e.button == 1
-        # center around image
-        i = @find_containing_image e.clientX, e.clientY
-        if i
-          scale = Math.min (@c.width - CENTER_BORDER) / i.pw,
-                           (@c.height - CENTER_BORDER) / i.ph
-          pan_x = @c.width / 2 - (i.px + i.pw / 2) * scale
-          pan_y = @c.height / 2 - (i.py + i.ph / 2) * scale
-          @navigate_to scale, pan_x, pan_y
-    @drag_state = 0
+    mouseup: (e) ->
+      @drag_state = 0
 
-  on_mousewheel: (e) =>
-    e.preventDefault()
-    if e.wheelDelta
-      factor = if e.wheelDelta > 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
-    else
-      factor = if e.detail < 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
-    @do_zoom factor, e.clientX, e.clientY
+    mousewheel: interaction_normal.mousewheel
 
-  do_zoom: (factor, client_x, client_y) =>
+  do_zoom: (factor, client_x, client_y) ->
     bounds = @c.getBoundingClientRect()
     center_x = client_x - bounds.left
     center_y = client_y - bounds.top
@@ -339,10 +406,19 @@ class Ocicle
 
     calls = []
 
-    @highlight_image = @find_containing_image cw/2, ch/2
+    # find highlight image: must be over center point of canvas
+    @highlight_image = @find_containing_image_canvas cw/2, ch/2
+    # and must be at least half the width or height
+    if @highlight_image
+      if @highlight_image.pw * @scale / cw < 0.5 and
+         @highlight_image.ph * @scale / ch < 0.5
+        @highlight_image = null
+    # update description
     desc = if @highlight_image then @highlight_image.meta.desc else ''
-    set_text 'desc', desc
-    document.getElementById('descedit').value = desc
+    if @editmode
+      document.getElementById('descedit').value = desc
+    else
+      set_text 'desc', desc
 
     # image frames
     lw = Math.max 1, FRAME_WIDTH * @scale

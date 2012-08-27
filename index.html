@@ -2,13 +2,14 @@
 	<head>
 		<title>Ocicle</title>
 		<link rel='stylesheet' href='style.css'>
+		<script src='bigscreen.min.js'></script>
 		<script src='ocicle.js'></script>
 	</head>
 	<body>
 		<div id='topbar'>
 			<div><a href='javascript:ocicle.reset()'>reset</a></div>
-			<div><a href='javascript:ocicle.edit()'>edit</a></div>
-			<div><a href='javascript:ocicle.meta.save()'>save</a></div>
+			<div><a href='javascript:ocicle.edit()' id='editlink'>edit</a></div>
+			<div><a href='javascript:BigScreen.toggle()'>full screen</a></div>
 			<div>zoom: <span id='zoom'></span></div>
 			<div>fps: <span id='fps'></span></div>
 		</div>
