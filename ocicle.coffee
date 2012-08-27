@@ -33,6 +33,53 @@ rect_is_outside = (c, x, y, w, h, border=PREFETCH_BORDER) ->
       x > c.width + border or     y > c.height + border
 
 
+simpleXHR = (action, url, data, cb) ->
+  req = new XMLHttpRequest
+  req.onreadystatechange = () -> if req.readyState == 4 then cb req
+  req.open action, url, true
+  req.send data
+
+
+# storage interface:
+# get: key, (value) -> ...
+# set: key, value, (success) -> ...
+class Storage
+  constructor: (@url) ->
+
+  get: (key, cb) ->
+    simpleXHR 'GET', @url + key, '', (req) ->
+      if req.status == 200
+        cb JSON.parse req.responseText
+      else if req.status == 404
+        cb null
+      else
+        console.log req.responseText
+        cb false
+
+  set: (key, value, cb) ->
+    value = JSON.stringify value
+    simpleXHR 'PUT', @url + key, value, (req) ->
+      if cb then cb req.status == 200
+
+
+# metadata interface:
+# data = [{
+#   src: url
+#   w, h: size of most detailed level in pixels
+#   ts: tile size for deep zoom pyramid
+#   px, py: location of placed image
+#   pw: width of placed image (height calculated from h * pw / w)
+#   desc: description
+# }]
+class Metadata
+  constructor: (@storage, @client_cb) ->
+    @storage.get 'meta', (value) =>
+      @data = value
+      if @client_cb then @client_cb @
+  save: () ->
+    @storage.set 'meta', @data
+
+
 # adapted from https://gist.github.com/771192
 class LruCache
   constructor: (@max_length) ->
@@ -74,11 +121,6 @@ class LruCache
       @_insert [key, value]
 
 
-class ImagePosition
-  constructor: (@w, @h) ->
-    @x = @y = 0
-
-
 class ImageLoader
   constructor: (src) ->
     @complete = false
@@ -101,17 +143,19 @@ class ImageLoader
 
 class DZImage
   constructor: (dz) ->
-    @name = dz.name
+    @src = dz.src
     @w = dz.w
     @h = dz.h
     @tile_size = dz.ts
-    @overlap = dz.o
     @min_level = @find_level @tile_size / 2
     @max_level = @find_level Math.max @w, @h
-    @pos = new ImagePosition @w, @h
+    @px = dz.px
+    @py = dz.py
+    @pw = dz.pw
+    @ph = @h * @pw / @w
 
   get_at_level: (level, x, y) ->
-    return @name + '/' + level + '/' + x + '_' + y + '.jpg'
+    return @src + '/' + level + '/' + x + '_' + y + '.jpg'
 
   find_level: (dim) ->
     Math.ceil(Math.log(dim) / Math.LN2)
@@ -166,7 +210,7 @@ class DZImage
 
 
 class Ocicle
-  constructor: (@c) ->
+  constructor: (@c, @meta) ->
     @c.addEventListener 'mousedown', @on_mousedown, true
     @c.addEventListener 'contextmenu', @on_mousedown, true
     @c.addEventListener 'mousemove', @on_mousemove, true
@@ -177,7 +221,7 @@ class Ocicle
 
     @frame = 0
     @last_now = @fps = 0
-    @images = (new DZImage dz for dz in IMAGES)
+    @images = (new DZImage dz for dz in @meta.data)
     @reset()
 
   reset: () ->
@@ -185,20 +229,14 @@ class Ocicle
     @tile_cache = new LruCache 100
     @pan_x = @pan_y = 0
     @scale = @scale_target = 1
-    @reset_image_positions()
     @render()
-
-  reset_image_positions: () ->
-    for i in @images
-      pos = POS[i.name]
-      if pos then i.pos = pos
 
   find_containing_image: (x, y) ->
     bounds = @c.getBoundingClientRect()
     x = (x - bounds.left - @pan_x) / @scale
     y = (y - bounds.top - @pan_y) / @scale
     for i in @images
-      if x >= i.pos.x and y >= i.pos.y and x <= i.pos.x + i.pos.w and y <= i.pos.y + i.pos.h
+      if x >= i.px and y >= i.py and x <= i.px + i.pw and y <= i.py + i.ph
         return i
     return undefined
 
@@ -233,10 +271,10 @@ class Ocicle
         # center around image
         i = @find_containing_image e.clientX, e.clientY
         if i
-          scale = Math.min (@c.width - CENTER_BORDER) / i.pos.w,
-                           (@c.height - CENTER_BORDER) / i.pos.h
-          pan_x = @c.width / 2 - (i.pos.x + i.pos.w / 2) * scale
-          pan_y = @c.height / 2 - (i.pos.y + i.pos.h / 2) * scale
+          scale = Math.min (@c.width - CENTER_BORDER) / i.pw,
+                           (@c.height - CENTER_BORDER) / i.ph
+          pan_x = @c.width / 2 - (i.px + i.pw / 2) * scale
+          pan_y = @c.height / 2 - (i.py + i.ph / 2) * scale
           @navigate_to scale, pan_x, pan_y
     @drag_state = 0
 
@@ -301,10 +339,10 @@ class Ocicle
     ctx.save()
     ctx.lineWidth = lw
     for i in @images
-      x = i.pos.x * @scale + @pan_x
-      y = i.pos.y * @scale + @pan_y
-      w = i.pos.w * @scale
-      h = i.pos.h * @scale
+      x = i.px * @scale + @pan_x
+      y = i.py * @scale + @pan_y
+      w = i.pw * @scale
+      h = i.ph * @scale
       continue if rect_is_outside @c, x, y, w, h
       ctx.strokeStyle = 'hsl(210,5%,15%)'
       ctx.strokeRect x + shadow, y + shadow, w, h
@@ -339,8 +377,9 @@ on_resize = () ->
 
 on_load = () ->
   on_resize()
-  window.ocicle = new Ocicle document.getElementById 'c'
+  storage = new Storage '/data/'
+  meta = new Metadata storage, (meta) ->
+    window.ocicle = new Ocicle document.getElementById('c'), meta
 
 window.addEventListener 'resize', on_resize, false
 window.addEventListener 'load', on_load, false
-
