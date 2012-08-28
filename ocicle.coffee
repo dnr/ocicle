@@ -1,7 +1,7 @@
 
 # TODO:
 # use more detailed scales when zooming out.
-# non-rectangular frames/clipping regions.
+# do more pre-fetching all around.
 # resize top and bottom bars based on font size.
 
 DRAG_FACTOR = 2
@@ -10,9 +10,16 @@ CLICK_ZOOM_FACTOR = 2
 WHEEL_ZOOM_FACTOR = Math.pow(2, 1/5)
 ANIMATE_MS = 500
 FRAME_WIDTH = 2
-FAKE_DELAY = 0 #800
+TILE_CACHE_SIZE = 500
+FAKE_DELAY = 0 #+500
 CENTER_BORDER = 30
-PREFETCH_BORDER = 200
+DEBUG_BORDERS = false
+
+# shapes:
+RECT = 0
+CIRCLE = 1
+HEXAGON = 2
+
 
 requestFrame = window.requestAnimationFrame       ||
                window.webkitRequestAnimationFrame ||
@@ -28,10 +35,21 @@ cancelFrame = window.cancelAnimationFrame       ||
               (id) -> window.clearTimeout id
 
 
-rect_is_outside = (c, x, y, w, h, border=PREFETCH_BORDER) ->
-  x + w < -border          or y + h < -border or
-      x > c.width + border or     y > c.height + border
+$ = (id) -> document.getElementById id
+set_text = (id, t) -> $(id).innerText = t
 
+rect_is_outside = (c, x, y, w, h) ->
+  x + w < 0 or y + h < 0 or x > c.width or y > c.height
+
+hexagon = (ctx, x, y, w, h) ->
+  o = h / 2 / Math.sqrt(2)
+  ctx.moveTo x + o, y
+  ctx.lineTo x + w - o, y
+  ctx.lineTo x + w, y + h / 2
+  ctx.lineTo x + w - o, y + h
+  ctx.lineTo x + o, y + h
+  ctx.lineTo x, y + h / 2
+  ctx.lineTo x + o, y
 
 simpleXHR = (action, url, data, cb) ->
   req = new XMLHttpRequest
@@ -86,6 +104,7 @@ class LruCache
     @map = {}
     @_has = @map.hasOwnProperty.bind @map
     @length = 0
+    @puts = 0
 
   _insert: (node) ->
     @map[node[0]] = node
@@ -112,6 +131,7 @@ class LruCache
       undefined
 
   put: (key, value) ->
+    @puts++
     if @_has key
       node = @map[key]
       node[1] = value
@@ -169,8 +189,7 @@ class DZImage
   clip_level: (level) ->
     Math.min(Math.max(level, @min_level), @max_level)
 
-  render_onto_ctx: (ctx, tile_cache, x, y, w, h) ->
-    frame = ctx.ocicle_frame
+  render_onto_ctx: (ctx, tile_cache, x, y, w, h, cb) ->
     tile_size = @meta.ts
 
     level = @clip_level 1 + @find_level Math.max w, h
@@ -180,19 +199,6 @@ class DZImage
     # this assumes the aspect ratio is preserved:
     draw_scale = w / @w * source_scale
     draw_ts = tile_size * draw_scale
-
-    draw = (img, c, r, diff) ->
-      return if ctx.ocicle_frame != frame
-      ts = tile_size >> diff
-      sx = ts * (c % (1 << diff))
-      sy = ts * (r % (1 << diff))
-      sw = Math.min ts + 2, img.dom.naturalWidth - sx
-      sh = Math.min ts + 2, img.dom.naturalHeight - sy
-      dx = x + c * draw_ts
-      dy = y + r * draw_ts
-      dw = sw * draw_scale * (1 << diff)
-      dh = sh * draw_scale * (1 << diff)
-      ctx.drawImage img.dom, sx, sy, sw, sh, dx, dy, dw, dh
 
     for c in [0 .. max_c]
       for r in [0 .. max_r]
@@ -206,13 +212,27 @@ class DZImage
           src = @get_at_level level2, c >> diff, r >> diff
           img = tile_cache.get src
           if img?.complete
-            draw img, c, r, diff
+            ts = tile_size >> diff
+            sx = ts * (c % (1 << diff))
+            sy = ts * (r % (1 << diff))
+            sw = Math.min ts + 2, img.dom.naturalWidth - sx
+            sh = Math.min ts + 2, img.dom.naturalHeight - sy
+            dx = x + c * draw_ts
+            dy = y + r * draw_ts
+            dw = sw * draw_scale * (1 << diff)
+            dh = sh * draw_scale * (1 << diff)
+            ctx.drawImage img.dom, sx, sy, sw, sh, dx, dy, dw, dh
+            if DEBUG_BORDERS
+              ctx.lineWidth = 1
+              ctx.strokeRect dx, dy, dw, dh
             break
           else if level2 == level
             if not img
+              console.log 'loading: ' + src
               img = new ImageLoader src
               tile_cache.put src, img
-            img.add_cb do (c, r, diff) -> (img) -> draw img, c, r, diff
+            img.add_cb cb
+    return
 
 
 class Ocicle
@@ -230,20 +250,19 @@ class Ocicle
     add_event ['mouseup', 'mouseout'], 'mouseup'
     add_event ['mousewheel', 'DOMMouseScroll'], 'mousewheel'
 
-    @frame = 0
     @last_now = @fps = 0
     @images = (new DZImage dz for dz in @meta.data)
     @reset()
 
   reset: () ->
     @stop_animation()
-    @tile_cache = new LruCache 100
+    @tile_cache = new LruCache TILE_CACHE_SIZE
     @pan_x = @pan_y = 0
     @scale = @scale_target = 1
     @render()
 
   edit: () ->
-    editlink = document.getElementById('editlink')
+    editlink = $ 'editlink'
     if @editmode
       editlink.innerText = 'save...'
       @meta.save (success) ->
@@ -251,13 +270,17 @@ class Ocicle
     else
       @editmode = true
       editlink.innerText = 'save'
-      document.getElementById('desc').style.display = 'none'
-      document.body.style.background = '#007AA3'
-      edit = document.getElementById('descedit')
-      edit.style.display = 'block'
+      body = document.getElementsByTagName('body')[0]
+      body.className = 'edit'
+      edit = $ 'descedit'
       edit.addEventListener 'input', () =>
         if @highlight_image
           @highlight_image.meta.desc = edit.value
+      shape = $ 'shapeselect'
+      shape.addEventListener 'change', () =>
+        if @highlight_image
+          @highlight_image.meta.shape = parseInt shape.value
+          @render()
 
   find_containing_image_screen: (x, y) ->
     bounds = @c.getBoundingClientRect()
@@ -394,55 +417,34 @@ class Ocicle
   on_resize: () ->
     @render()
 
-  render: () ->
+
+  setup_context: () ->
     cw = @c.parentElement.clientWidth
     if @c.width != cw then @c.width = cw
     ch = @c.parentElement.clientHeight
     if @c.height != ch then @c.height = ch
 
     ctx = @c.getContext '2d'
-    ctx.ocicle_frame = @frame++
     ctx.clearRect 0, 0, cw, ch
+    [ctx, cw, ch]
 
-    calls = []
-
-    # find highlight image: must be over center point of canvas
-    @highlight_image = @find_containing_image_canvas cw/2, ch/2
+  update_highlight_image: (cw, ch) ->
+    # must be over center point of canvas
+    i = @find_containing_image_canvas cw/2, ch/2
     # and must be at least half the width or height
-    if @highlight_image
-      if @highlight_image.pw * @scale / cw < 0.5 and
-         @highlight_image.ph * @scale / ch < 0.5
-        @highlight_image = null
+    if i
+      if i.pw * @scale / cw < 0.5 and i.ph * @scale / ch < 0.5
+        i = null
     # update description
-    desc = if @highlight_image then @highlight_image.meta.desc else ''
+    desc = i?.meta.desc or ''
     if @editmode
-      document.getElementById('descedit').value = desc
+      $('descedit').value = desc
+      $('shapeselect').value = i?.meta.shape
     else
       set_text 'desc', desc
+    @highlight_image = i
 
-    # image frames
-    lw = Math.max 1, FRAME_WIDTH * @scale
-    shadow = Math.max 1, FRAME_WIDTH * @scale / 2
-    ctx.save()
-    ctx.lineWidth = lw
-    for i in @images
-      x = i.px * @scale + @pan_x
-      y = i.py * @scale + @pan_y
-      w = i.pw * @scale
-      h = i.ph * @scale
-      continue if rect_is_outside @c, x, y, w, h
-      ctx.strokeStyle = 'hsl(210,5%,15%)'
-      ctx.strokeRect x + shadow, y + shadow, w, h
-      ctx.strokeStyle = 'hsl(210,5%,5%)'
-      ctx.strokeRect x, y, w, h
-      calls.push([i, x, y, w, h])
-    ctx.restore()
-
-    # images
-    for [i, x, y, w, h] in calls
-      i.render_onto_ctx ctx, @tile_cache, x, y, w, h
-
-    # update fps
+  update_fps: () ->
     now = Date.now()
     ms = now - @last_now
     @fps = (1000 / ms + @fps * 9) / 10
@@ -450,10 +452,54 @@ class Ocicle
     @last_now = now
     scale = Math.log(@scale) / Math.LN2
     set_text 'zoom', ~~(10 * scale + .5) / 10
+    set_text 'tiles', @tile_cache.puts
 
+  render: () ->
+    [ctx, cw, ch] = @setup_context()
+    @update_highlight_image cw, ch
+    @update_fps()
 
-set_text = (id, t) ->
-  document.getElementById(id).innerText = t
+    ctx.lineWidth = Math.max 1, FRAME_WIDTH * @scale
+    shadow = Math.max 1, FRAME_WIDTH * @scale / 2
+
+    for i in @images
+      x = i.px * @scale + @pan_x
+      y = i.py * @scale + @pan_y
+      w = i.pw * @scale
+      h = i.ph * @scale
+      continue if rect_is_outside @c, x, y, w, h
+
+      ctx.save()
+
+      ctx.strokeStyle = 'hsl(210,5%,5%)'
+      ctx.shadowColor = 'hsl(210,5%,15%)'
+      ctx.shadowOffsetX = shadow
+      ctx.shadowOffsetY = shadow
+
+      ctx.beginPath()
+      switch i.meta.shape or RECT
+        when RECT
+          ctx.rect x, y, w, h
+        when CIRCLE
+          ctx.arc x+w/2, y+h/2, Math.min(w,h)/2, 0, 2*Math.PI
+        when HEXAGON
+          hexagon ctx, x, y, w, h
+      ctx.closePath()
+
+      ctx.stroke()
+      ctx.clip()
+
+      ctx.shadowOffsetX = ctx.shadowOffsetY = 0
+
+      i.render_onto_ctx ctx, @tile_cache, x, y, w, h, @img_load_cb
+
+      ctx.restore()
+    return
+
+  img_load_cb: () =>
+    if @load_timeout_id then window.clearTimeout @load_timeout_id
+    @load_timeout_id = window.setTimeout (=>@render()), 50
+
 
 on_resize = () ->
   if window.ocicle then window.ocicle.on_resize()
@@ -462,7 +508,7 @@ on_load = () ->
   on_resize()
   storage = new Storage '/data/'
   meta = new Metadata storage, (meta) ->
-    window.ocicle = new Ocicle document.getElementById('c'), meta
+    window.ocicle = new Ocicle $('c'), meta
 
 window.addEventListener 'resize', on_resize, false
 window.addEventListener 'load', on_load, false

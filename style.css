@@ -60,3 +60,15 @@ a:hover {
 	padding: 1ex;
 	text-align: center;
 }
+
+body.normal .edit {
+	display: none !important;
+}
+
+body.edit .noedit {
+	display: none !important;
+}
+
+body.edit {
+	background: hsl(0, 70%, 25%);
+}
