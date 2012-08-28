@@ -9,10 +9,10 @@ DRAG_THRESHOLD = 3
 CLICK_ZOOM_FACTOR = 2
 WHEEL_ZOOM_FACTOR = Math.pow(2, 1/5)
 ANIMATE_MS = 500
-FRAME_WIDTH = 2
+FRAME_WIDTH = 1
 TILE_CACHE_SIZE = 500
 FAKE_DELAY = 0 #+500
-CENTER_BORDER = 30
+CENTER_BORDER = 40
 DEBUG_BORDERS = false
 
 # shapes:
@@ -181,7 +181,7 @@ class DZImage
     @ph = @h * @pw / @w
 
   get_at_level: (level, x, y) ->
-    @meta.src + '/' + level + '/' + x + '_' + y + '.jpg'
+    'tiles/' + @meta.src + '/' + level + '/' + x + '_' + y + '.jpg'
 
   find_level: (dim) ->
     Math.ceil(Math.log(dim) / Math.LN2)
