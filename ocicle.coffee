@@ -285,16 +285,17 @@ class Ocicle
       li.appendChild a
       ul.appendChild li
 
+  find_mark: (name) ->
+    for mark in @meta.data.marks
+      if mark.name == name
+        return mark
+
   set_bookmark: () ->
     name = $('editmark').value
     $('editmark').value = ''
     if name == 'home' then return
-    found = null
-    for mark in @meta.data.marks
-      if mark.name == name
-        found = mark
-        break
-    if found
+    mark = @find_mark name
+    if mark
       mark.x = @pan_x
       mark.y = @pan_y
       mark.scale = @scale
