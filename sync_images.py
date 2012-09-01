@@ -89,7 +89,7 @@ def main():
 		assert jpg.endswith('.jpg')
 		base = os.path.basename(jpg)[:-4]
 		attrs = MakeTiles(base)
-		AddToMeta(meta, attrs)
+		AddToMeta(meta['images'], attrs)
 
 	if meta != orig_meta:
 		os.rename(META, META + '.backup-%d' % time.time())
