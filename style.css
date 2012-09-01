@@ -43,6 +43,29 @@ a:hover {
 	padding-left: 2em;
 }
 
+#gotopopup {
+	background: #181818;
+	position: relative;
+}
+
+#gotopopup > ul {
+	display: none;
+	position: absolute;
+	margin: 0;
+	padding: 0.5ex;
+	left: -1ex;
+	list-style: none;
+	background: inherit;
+}
+
+#gotopopup:hover > ul {
+	display: block;
+}
+
+#gotopopup li {
+	margin: 0.5ex;
+}
+
 #mainbox {
 	float: top;
 	width: 100%;

@@ -7,17 +7,30 @@
 	</head>
 	<body class='normal'>
 		<div id='topbar'>
-			<div><a href='javascript:ocicle.reset()'>reset</a></div>
+			<div>
+				<div id='gotopopup'>
+					<span id='gotobase'>go...</span>
+					<ul id='gotolist'>
+					</ul>
+				</div>
+			</div>
 			<div><a href='javascript:ocicle.edit()' id='editlink'>edit</a></div>
 			<div><a href='javascript:BigScreen.toggle()'>full screen</a></div>
 			<div>zoom: <span id='zoom'></span></div>
 			<div>fps: <span id='fps'></span></div>
 			<div>tiles: <span id='tiles'></span></div>
 			<div class='edit'>
+				<label>
+					bookmark
+					<input id='editmark' type='text'
+					onchange='ocicle.set_bookmark()'></input>
+				</label>
+			</div>
+			<div class='edit'>
 				<select id='shapeselect'>
-					<option value="0">rect</option>
-					<option value="1">circle</option>
-					<option value="2">hex</option>
+					<option value='0'>rect</option>
+					<option value='1'>circle</option>
+					<option value='2'>hex</option>
 				</select>
 			</div>
 		</div>

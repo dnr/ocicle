@@ -57,6 +57,11 @@ simpleXHR = (action, url, data, cb) ->
   req.open action, url, true
   req.send data
 
+clear_node = (node) ->
+  if not (node instanceof Node) then node = $(node)
+  while node.hasChildNodes()
+    node.removeChild node.firstChild
+
 
 # storage interface:
 # get: key, (value) -> ...
@@ -71,7 +76,7 @@ class Storage
       else if req.status == 404
         cb null
       else
-        console.log req.responseText
+        #console.log req.responseText
         cb false
 
   set: (key, value, cb) ->
@@ -81,13 +86,19 @@ class Storage
 
 
 # metadata interface:
-# data = [{
+# images, marks
+# images = [{
 #   src: url
 #   w, h: size of most detailed level in pixels
 #   ts: tile size for deep zoom pyramid
 #   px, py: location of placed image
 #   pw: width of placed image (height calculated from h * pw / w)
 #   desc: description
+# }]
+# marks = [{
+#   name: name
+#   x, y: pan_x, pan_y
+#   scale: scale
 # }]
 class Metadata
   constructor: (@storage, @client_cb) ->
@@ -228,7 +239,7 @@ class DZImage
             break
           else if level2 == level
             if not img
-              console.log 'loading: ' + src
+              #console.log 'loading: ' + src
               img = new ImageLoader src
               tile_cache.put src, img
             img.add_cb cb
@@ -250,16 +261,51 @@ class Ocicle
     add_event ['mouseup', 'mouseout'], 'mouseup'
     add_event ['mousewheel', 'DOMMouseScroll'], 'mousewheel'
 
-    @last_now = @fps = 0
-    @images = (new DZImage dz for dz in @meta.data)
     @reset()
 
   reset: () ->
     @stop_animation()
+    @last_now = @fps = 0
+    @images = (new DZImage dz for dz in @meta.data.images)
+    @setup_bookmarks()
     @tile_cache = new LruCache TILE_CACHE_SIZE
     @pan_x = @pan_y = 0
     @scale = @scale_target = 1
     @render()
+
+  setup_bookmarks: () ->
+    ul = $ 'gotolist'
+    clear_node ul
+    for mark in @meta.data.marks
+      li = document.createElement 'li'
+      a = document.createElement 'a'
+      a.href = '#'
+      a.innerText = mark.name
+      a.onclick = do (mark) => () => @navigate_to mark.scale, mark.x, mark.y
+      li.appendChild a
+      ul.appendChild li
+
+  set_bookmark: () ->
+    name = $('editmark').value
+    $('editmark').value = ''
+    if name == 'home' then return
+    found = null
+    for mark in @meta.data.marks
+      if mark.name == name
+        found = mark
+        break
+    if found
+      mark.x = @pan_x
+      mark.y = @pan_y
+      mark.scale = @scale
+    else
+      mark =
+        name: name
+        x: @pan_x
+        y: @pan_y
+        scale: @scale
+      @meta.data.marks.push mark
+    @setup_bookmarks()
 
   edit: () ->
     editlink = $ 'editlink'
