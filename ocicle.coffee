@@ -272,10 +272,12 @@ class Ocicle
       editlink.innerText = 'save'
       body = document.getElementsByTagName('body')[0]
       body.className = 'edit'
-      edit = $ 'descedit'
-      edit.addEventListener 'input', () =>
+      desc = $ 'desc'
+      desc.contentEditable = true
+      desc.addEventListener 'input', () =>
         if @highlight_image
-          @highlight_image.meta.desc = edit.value
+          @highlight_image.meta.desc = desc.innerText
+
       shape = $ 'shapeselect'
       shape.addEventListener 'change', () =>
         if @highlight_image
@@ -436,12 +438,9 @@ class Ocicle
       if i.pw * @scale / cw < 0.5 and i.ph * @scale / ch < 0.5
         i = null
     # update description
-    desc = i?.meta.desc or ''
+    set_text 'desc', i?.meta.desc or ''
     if @editmode
-      $('descedit').value = desc
       $('shapeselect').value = i?.meta.shape
-    else
-      set_text 'desc', desc
     @highlight_image = i
 
   update_fps: () ->
