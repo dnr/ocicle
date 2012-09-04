@@ -513,6 +513,7 @@ class Ocicle
 
     ctx.lineWidth = Math.max 1, FRAME_WIDTH * @scale
     shadow = Math.max 1, FRAME_WIDTH * @scale / 2
+    fw = ctx.lineWidth / 2
 
     max_ratio = 0
     for i in @images
@@ -520,8 +521,7 @@ class Ocicle
       y = i.py * @scale + @pan_y
       w = i.pw * @scale
       h = i.ph * @scale
-      # TODO: extend to linewidth borders
-      continue if rect_is_outside @c, x, y, w, h
+      continue if rect_is_outside @c, x-fw, y-fw, w+3*fw, h+3*fw
 
       ctx.save()
 
