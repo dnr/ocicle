@@ -14,6 +14,8 @@ TILE_CACHE_SIZE = 500
 FAKE_DELAY = 0 #+500
 CENTER_BORDER = 40
 DEBUG_BORDERS = false
+ZOOM_LIMIT_LIMIT = 3.3
+ZOOM_LIMIT_TARGET = 3.0
 
 # shapes:
 RECT = 0
@@ -460,7 +462,11 @@ class Ocicle
       for prop in props
         prop.set prop.start * (1-t) + prop.end * t
       @render()
-      @request_id = if t < 1 then requestFrame frame, @c
+      if @hit_limit
+        @scale_target = @scale
+        @do_zoom @hit_limit, @c.width/2, @c.height/2
+      else
+        @request_id = if t < 1 then requestFrame frame, @c
     frame()
 
   on_resize: () ->
@@ -494,10 +500,10 @@ class Ocicle
     now = Date.now()
     ms = now - @last_now
     @fps = (1000 / ms + @fps * 9) / 10
-    set_text 'fps', ~~(@fps + .5)
+    set_text 'fps', @fps.toFixed 0
     @last_now = now
     scale = Math.log(@scale) / Math.LN2
-    set_text 'zoom', ~~(10 * scale + .5) / 10
+    set_text 'zoom', scale.toFixed 1
     set_text 'tiles', @tile_cache.puts
 
   render: () ->
@@ -508,11 +514,13 @@ class Ocicle
     ctx.lineWidth = Math.max 1, FRAME_WIDTH * @scale
     shadow = Math.max 1, FRAME_WIDTH * @scale / 2
 
+    max_ratio = 0
     for i in @images
       x = i.px * @scale + @pan_x
       y = i.py * @scale + @pan_y
       w = i.pw * @scale
       h = i.ph * @scale
+      # TODO: extend to linewidth borders
       continue if rect_is_outside @c, x, y, w, h
 
       ctx.save()
@@ -537,12 +545,26 @@ class Ocicle
 
       ctx.shadowOffsetX = ctx.shadowOffsetY = 0
 
+      max_ratio = Math.max max_ratio, i.w / w
       i.render_onto_ctx ctx, @tile_cache, x, y, w, h, @img_load_cb
 
       ctx.restore()
+
+    if max_ratio == 0
+      set_text 'ratio', ''
+    else if max_ratio < 1
+      set_text 'ratio', '1\u2236' + (1 / max_ratio).toFixed 1
+    else
+      set_text 'ratio', max_ratio.toFixed 1
+
+    @hit_limit = false
+    if max_ratio > 0 and max_ratio < 1 / ZOOM_LIMIT_LIMIT
+      @hit_limit = max_ratio * ZOOM_LIMIT_TARGET
+
     return
 
   img_load_cb: () =>
+    # TODO: check if any pending and render then, not this timeout stuff
     if @load_timeout_id then window.clearTimeout @load_timeout_id
     @load_timeout_id = window.setTimeout (=>@render()), 50
 
