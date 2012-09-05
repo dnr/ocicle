@@ -16,15 +16,13 @@
 			</div>
 			<div><a href='javascript:ocicle.edit()' id='editlink'>edit</a></div>
 			<div><a href='javascript:BigScreen.toggle()'>full screen</a></div>
-			<div>zoom: <span id='zoom'></span></div>
 			<div>ratio: <span id='ratio'></span></div>
 			<div>fps: <span id='fps'></span></div>
 			<div>tiles: <span id='tiles'></span></div>
 			<div class='edit'>
 				<label>
-					bookmark
-					<input id='editmark' type='text'
-					onchange='ocicle.set_bookmark()'></input>
+					mark
+					<input id='editmark' type='text' size='10'>
 				</label>
 			</div>
 			<div class='edit'>
@@ -32,6 +30,15 @@
 					<option value='0'>rect</option>
 					<option value='1'>circle</option>
 					<option value='2'>hex</option>
+				</select>
+			</div>
+			<div class='edit'>
+				<select id='gridsize'>
+					<option value='0'>no grid</option>
+					<option value='1'>1</option>
+					<option value='4' selected>4</option>
+					<option value='16'>16</option>
+					<option value='64'>64</option>
 				</select>
 			</div>
 		</div>

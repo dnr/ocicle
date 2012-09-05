@@ -273,6 +273,7 @@ class Ocicle
     @tile_cache = new LruCache TILE_CACHE_SIZE
     @pan_x = @pan_y = 0
     @scale = @scale_target = 1
+    @gridsize = parseInt $('gridsize').value
     @render()
 
   setup_bookmarks: () ->
@@ -292,24 +293,6 @@ class Ocicle
       if mark.name == name
         return mark
 
-  set_bookmark: () ->
-    name = $('editmark').value
-    $('editmark').value = ''
-    if name == 'home' then return
-    mark = @find_mark name
-    if mark
-      mark.x = @pan_x
-      mark.y = @pan_y
-      mark.scale = @scale
-    else
-      mark =
-        name: name
-        x: @pan_x
-        y: @pan_y
-        scale: @scale
-      @meta.data.marks.push mark
-    @setup_bookmarks()
-
   edit: () ->
     editlink = $ 'editlink'
     if @editmode
@@ -321,6 +304,7 @@ class Ocicle
       editlink.innerText = 'save'
       body = document.getElementsByTagName('body')[0]
       body.className = 'edit'
+
       desc = $ 'desc'
       desc.contentEditable = true
       desc.addEventListener 'input', () =>
@@ -333,7 +317,33 @@ class Ocicle
           @highlight_image.meta.shape = parseInt shape.value
           @render()
 
-  find_containing_image_screen: (x, y) ->
+      editmark = $ 'editmark'
+      editmark.addEventListener 'change', () =>
+        name = editmark.value
+        editmark.value = ''
+        if name == 'home' then return
+        mark = @find_mark name
+        if mark
+          mark.x = @pan_x
+          mark.y = @pan_y
+          mark.scale = @scale
+        else
+          mark =
+            name: name
+            x: @pan_x
+            y: @pan_y
+            scale: @scale
+          @meta.data.marks.push mark
+        @setup_bookmarks()
+
+      gridsize = $ 'gridsize'
+      gridsize.addEventListener 'change', () =>
+        @gridsize = parseInt gridsize.value
+        @render()
+
+      @render()
+
+  find_containing_image_client: (x, y) ->
     bounds = @c.getBoundingClientRect()
     @find_containing_image_canvas x - bounds.left, y - bounds.top
 
@@ -342,8 +352,12 @@ class Ocicle
     y = (y - @pan_y) / @scale
     for i in @images
       if x >= i.px and y >= i.py and x <= i.px + i.pw and y <= i.py + i.ph
-        return i
-    null
+        xr = (x - i.px) / i.pw * 6
+        yr = (y - i.py) / i.ph * 6
+        xa = if xr < 1 then -1 else if xr > 5 then 1 else 0
+        ya = if yr < 1 then -1 else if yr > 5 then 1 else 0
+        return [i, xa, ya]
+    return [null, 0, 0]
 
   interaction_normal =
     mousedown: (e) ->
@@ -375,7 +389,7 @@ class Ocicle
           @do_zoom factor, e.clientX, e.clientY
         else if e.button == 1
           # center around image
-          i = @find_containing_image_screen e.clientX, e.clientY
+          [i] = @find_containing_image_client e.clientX, e.clientY
           if i
             scale = Math.min (@c.width - CENTER_BORDER) / i.pw,
                              (@c.height - CENTER_BORDER) / i.ph
@@ -395,15 +409,16 @@ class Ocicle
   interaction_edit =
     # drag states:
     #  1: pan
-    #  2/3/4: left/right/middle button on image
+    #  2: drag/resize image
     mousedown: (e) ->
       e.preventDefault()
       @stop_animation()
       @drag_screen_x = e.screenX
       @drag_screen_y = e.screenY
-      @drag_img = @find_containing_image_screen e.clientX, e.clientY
-      if @drag_img
-        @drag_state = 2 + e.button
+      [@drag_img, xa, ya] = @find_containing_image_client e.clientX, e.clientY
+      if @drag_img and e.button == 0
+        @drag_state = 2
+        @drag_area = [xa, ya]
         @drag_px = @drag_img.px
         @drag_py = @drag_img.py
         @drag_pw = @drag_img.pw
@@ -419,13 +434,29 @@ class Ocicle
       if @drag_state == 1  # pan
         @pan_x = @drag_pan_x + DRAG_FACTOR * move_x
         @pan_y = @drag_pan_y + DRAG_FACTOR * move_y
-      else if @drag_state == 2  # left button on image
-        @drag_img.move @drag_px + move_x / @scale,
-                       @drag_py + move_y / @scale
-      else if @drag_state == 3  # middle button on image
-        false
-      else if @drag_state == 4  # right button on image
-        @drag_img.scale @drag_pw * Math.pow(1.002, move_x+move_y)
+      else if @drag_state == 2  # drag/resize image
+        [xa, ya] = @drag_area
+        aspect = @drag_img.w / @drag_img.h
+        drag_ph = @drag_pw / aspect
+        if xa == 1  # right
+          x = @snap @drag_px + @drag_pw + move_x / @scale
+          @drag_img.scale x - @drag_px
+        else if xa == -1  # left
+          x = @snap @drag_px + move_x / @scale
+          @drag_img.move x, @drag_py
+          @drag_img.scale @drag_pw + @drag_px - x
+        else if ya == 1  # bottom
+          y = @snap @drag_py + drag_ph + move_y / @scale
+          @drag_img.scale aspect * (y - @drag_py)
+        else if ya == -1  # top
+          y = @snap @drag_py + move_y / @scale
+          @drag_img.move @drag_px, y
+          @drag_img.scale aspect * (drag_ph + @drag_py - y)
+        else  # center
+          x = @snap @drag_px + move_x / @scale
+          y = @snap @drag_py + move_y / @scale
+          @drag_img.move x, y
+
       @render()
 
     mouseup: (e) ->
@@ -485,7 +516,7 @@ class Ocicle
 
   update_highlight_image: (cw, ch) ->
     # must be over center point of canvas
-    i = @find_containing_image_canvas cw/2, ch/2
+    [i] = @find_containing_image_canvas cw/2, ch/2
     # and must be at least half the width or height
     if i
       if i.pw * @scale / cw < 0.5 and i.ph * @scale / ch < 0.5
@@ -502,14 +533,38 @@ class Ocicle
     @fps = (1000 / ms + @fps * 9) / 10
     set_text 'fps', @fps.toFixed 0
     @last_now = now
-    scale = Math.log(@scale) / Math.LN2
-    set_text 'zoom', scale.toFixed 1
+    #set_text 'zoom', (Math.log(@scale) / Math.LN2).toFixed 1
     set_text 'tiles', @tile_cache.puts
+
+  snap: (x) ->
+    if @gridsize then @gridsize * Math.round x / @gridsize else x
+
+  draw_grid: (ctx, cw, ch) ->
+    return unless @gridsize and @editmode
+    ctx.beginPath()
+    x = @snap -@pan_x / @scale
+    y = @snap -@pan_y / @scale
+    end_x = (cw - @pan_x) / @scale
+    end_y = (ch - @pan_y) / @scale
+    while x < end_x
+      dx = 0.5 + Math.floor x * @scale + @pan_x
+      ctx.moveTo dx, 0
+      ctx.lineTo dx, ch
+      x += @gridsize
+    while y < end_y
+      dy = 0.5 + Math.floor y * @scale + @pan_y
+      ctx.moveTo 0, dy
+      ctx.lineTo cw, dy
+      y += @gridsize
+    ctx.lineWidth = 1
+    ctx.strokeStyle = 'hsl(210,5%,25%)'
+    ctx.stroke()
 
   render: () ->
     [ctx, cw, ch] = @setup_context()
     @update_highlight_image cw, ch
     @update_fps()
+    @draw_grid ctx, cw, ch
 
     ctx.lineWidth = Math.max 1, FRAME_WIDTH * @scale
     shadow = Math.max 1, FRAME_WIDTH * @scale / 2
@@ -525,6 +580,8 @@ class Ocicle
 
       ctx.save()
 
+      if i is @highlight_image
+        ctx.lineWidth *= 1.5
       ctx.strokeStyle = 'hsl(210,5%,5%)'
       ctx.shadowColor = 'hsl(210,5%,15%)'
       ctx.shadowOffsetX = shadow
