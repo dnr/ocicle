@@ -453,9 +453,21 @@ class Ocicle
           @drag_img.move @drag_px, y
           @drag_img.scale aspect * (drag_ph + @drag_py - y)
         else  # center
-          x = @snap @drag_px + move_x / @scale
-          y = @snap @drag_py + move_y / @scale
-          @drag_img.move x, y
+          x = @drag_px + move_x / @scale
+          y = @drag_py + move_y / @scale
+          snap_and_dist = (w, h) =>
+            sx = @snap x + w
+            sy = @snap y + h
+            dx = x + w - sx
+            dy = y + h - sy
+            [sx - w, sy - h, dx*dx+dy*dy]
+          pts = [
+            snap_and_dist 0, 0
+            snap_and_dist @drag_pw, 0
+            snap_and_dist 0, drag_ph
+            snap_and_dist @drag_pw, drag_ph
+          ].sort (a, b) -> a[2] - b[2]
+          @drag_img.move pts[0][0], pts[0][1]
 
       @render()
 
