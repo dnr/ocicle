@@ -16,6 +16,11 @@ CENTER_BORDER = 40
 DEBUG_BORDERS = false
 ZOOM_LIMIT_LIMIT = 3.3
 ZOOM_LIMIT_TARGET = 3.0
+UNZOOM_LIMIT = 1/10
+
+BKGD_SCALEFACTOR = 8
+BKGD_SCALES = (Math.pow(BKGD_SCALEFACTOR, scale) for scale in [-1..3])
+BKGD_IMAGE = 'bkgd/bk.jpg'
 
 # shapes:
 RECT = 0
@@ -63,6 +68,34 @@ clear_node = (node) ->
   if not (node instanceof Node) then node = $(node)
   while node.hasChildNodes()
     node.removeChild node.firstChild
+
+array_sum = (a) ->
+  t = 0
+  t += x for x in a
+  t
+
+weights_to_alphas = (weights) ->
+  total_weight = array_sum weights
+  cumulative_weight = 0
+  alphas = []
+  for w in weights
+    alphas.push if w then 1 - cumulative_weight / total_weight else 0
+    cumulative_weight += w
+  alphas
+
+calc_scale_alphas = (scale) ->
+  len = BKGD_SCALES.length
+  if scale < BKGD_SCALES[0]
+    weights = (0 for _ in BKGD_SCALES)
+    weights[0] = 1
+  else if scale > BKGD_SCALES[len-1]
+    weights = (0 for _ in BKGD_SCALES)
+    weights[len-1] = 1
+  else
+    weights = for s in BKGD_SCALES
+      ratio = Math.log(s / scale) / Math.log(BKGD_SCALEFACTOR)
+      Math.max 0, 1 - Math.pow(ratio, 2)
+  weights_to_alphas weights
 
 
 # storage interface:
@@ -269,6 +302,7 @@ class Ocicle
     @stop_animation()
     @last_now = @fps = 0
     @images = (new DZImage dz for dz in @meta.data.images)
+    @bkgd_image = new ImageLoader BKGD_IMAGE
     @setup_bookmarks()
     @tile_cache = new LruCache TILE_CACHE_SIZE
     @pan_x = @pan_y = 0
@@ -526,6 +560,24 @@ class Ocicle
     ctx.clearRect 0, 0, cw, ch
     [ctx, cw, ch]
 
+  draw_background: (ctx, cw, ch) ->
+    return unless @bkgd_image.complete
+
+    img = @bkgd_image.dom
+    alphas = calc_scale_alphas @scale
+    for s in BKGD_SCALES
+      alpha = alphas.shift()
+      continue unless alpha
+      ctx.globalAlpha = alpha
+      sz = img.naturalWidth * @scale / s
+      sx = ((@pan_x % sz) + sz) % sz
+      sy = ((@pan_y % sz) + sz) % sz
+      for c in [-1..cw/sz]
+        for r in [-1..ch/sz]
+          ctx.drawImage img, sx + c * sz, sy + r * sz, sz, sz
+
+    ctx.globalAlpha = 1
+
   update_highlight_image: (cw, ch) ->
     # must be over center point of canvas
     [i] = @find_containing_image_canvas cw/2, ch/2
@@ -574,11 +626,14 @@ class Ocicle
 
   render: () ->
     [ctx, cw, ch] = @setup_context()
+    @draw_background ctx, cw, ch
     @update_highlight_image cw, ch
     @update_fps()
     @draw_grid ctx, cw, ch
 
     ctx.lineWidth = Math.max 1, FRAME_WIDTH * @scale
+    ctx.strokeStyle = 'hsl(210,5%,5%)'
+    ctx.shadowColor = 'hsl(210,5%,15%)'
     shadow = Math.max 1, FRAME_WIDTH * @scale / 2
     fw = ctx.lineWidth / 2
 
@@ -593,11 +648,7 @@ class Ocicle
       ctx.save()
 
       if i is @highlight_image
-        ctx.lineWidth *= 1.5
-      ctx.strokeStyle = 'hsl(210,5%,5%)'
-      ctx.shadowColor = 'hsl(210,5%,15%)'
-      ctx.shadowOffsetX = shadow
-      ctx.shadowOffsetY = shadow
+        ctx.shadowOffsetX = ctx.shadowOffsetY = shadow
 
       ctx.beginPath()
       switch i.meta.shape or RECT
@@ -629,6 +680,8 @@ class Ocicle
     @hit_limit = false
     if max_ratio > 0 and max_ratio < 1 / ZOOM_LIMIT_LIMIT
       @hit_limit = max_ratio * ZOOM_LIMIT_TARGET
+    else if @scale < UNZOOM_LIMIT
+      @hit_limit = 1.05
 
     return
 
