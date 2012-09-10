@@ -8,7 +8,8 @@ DRAG_FACTOR = 2
 DRAG_THRESHOLD = 3
 CLICK_ZOOM_FACTOR = 2
 WHEEL_ZOOM_FACTOR = Math.pow(2, 1/5)
-ANIMATE_MS = 500
+SLIDE_MS = 500
+FLY_MS = 1500
 FRAME_WIDTH = 1
 TILE_CACHE_SIZE = 500
 FAKE_DELAY = 0 #+500
@@ -452,7 +453,7 @@ class Ocicle
         if @drag_state >= 2
           pan_x = @drag_pan_x + DRAG_FACTOR * move_x
           pan_y = @drag_pan_y + DRAG_FACTOR * move_y
-          @navigate_to @scale, pan_x, pan_y
+          @slide_to @scale, pan_x, pan_y
 
     mouseup: (e) ->
       if @drag_state == 1
@@ -557,48 +558,47 @@ class Ocicle
     @scale_target *= factor
     pan_x = center_x - @scale_target / @scale * (center_x - @pan_x)
     pan_y = center_y - @scale_target / @scale * (center_y - @pan_y)
-    @navigate_to @scale_target, pan_x, pan_y
+    @slide_to @scale_target, pan_x, pan_y
 
-  navigate_to: (scale, pan_x, pan_y) ->
-    props = [
-      {start: @pan_x, end: pan_x, set: (@pan_x) =>}
-      {start: @pan_y, end: pan_y, set: (@pan_y) =>}
-      {start: @scale, end: @scale_target = scale, set: (@scale) =>}
-    ]
-    @animate props, ANIMATE_MS
+  slide_to: (end_s, end_x, end_y) ->
+    @scale_target = end_s
+    start_x = @pan_x
+    start_y = @pan_y
+    start_s = @scale
+    update = (t) =>
+      t = Math.sqrt t  # start fast, end slow
+      @pan_x = start_x * (1-t) + end_x * t
+      @pan_y = start_y * (1-t) + end_y * t
+      @scale = start_s * (1-t) + end_s * t
+    @animate update, SLIDE_MS
 
   fly_to: (end_s, end_x, end_y) ->
     @scale_target = end_s
     start_x = @pan_x
     start_y = @pan_y
     start_s = @scale
-    cw = @c.width
-    ch = @c.height
 
-    start_gx = (cw / 2 - start_x) / start_s
-    start_gy = (ch / 2 - start_y) / start_s
+    start_gx = (@cw2 - start_x) / start_s
+    start_gy = (@ch2 - start_y) / start_s
     start_gz = 1 / start_s
-    end_gx = (cw / 2 - end_x) / end_s
-    end_gy = (ch / 2 - end_y) / end_s
+    end_gx = (@cw2 - end_x) / end_s
+    end_gy = (@ch2 - end_y) / end_s
     end_gz = 1 / end_s
 
     dy = end_gy - start_gy
     dx = end_gx - start_gx
     theta = Math.atan2 dy, dx
     dist = Math.sqrt dx * dx + dy * dy
-    diag = Math.sqrt cw * cw + ch * ch
+    diag = Math.sqrt @cw * @cw + @ch * @ch
 
     mid_gz = Math.max(start_gz, end_gz) + dist / diag / 2
 
     [a, b, c] = parabola start_gz, end_gz, mid_gz
+    return if a == 0
     total_s = parabola_len a, b, 1
 
-    ms = 1500
-
-    @stop_animation()
-    start = Date.now() - 5
-    frame = () =>
-      t = Math.min 1, (Date.now() - start) / ms
+    update = (t) =>
+      # Move along the parabola at constant velocity.
       t = inverse_parabola_len a, b, t * total_s
 
       gz = a * t * t + b * t + c
@@ -606,25 +606,21 @@ class Ocicle
       gy = start_gy + t * dist * Math.sin theta
 
       @scale = 1 / gz
-      @pan_x = cw / 2 - @scale * gx
-      @pan_y = ch / 2 - @scale * gy
-
-      @render()
-      @request_id = if t < 1 then requestFrame frame, @c
-    frame()
+      @pan_x = @cw2 - gx / gz
+      @pan_y = @ch2 - gy / gz
+    @animate update, FLY_MS, false
 
   stop_animation: () ->
     cancelFrame @request_id if @request_id
 
-  animate: (props, ms) ->
+  animate: (update, ms, check_limit=true) ->
     @stop_animation()
     start = Date.now() - 5
     frame = () =>
-      t = Math.sqrt (Math.min 1, (Date.now() - start) / ms)
-      for prop in props
-        prop.set prop.start * (1-t) + prop.end * t
+      t = Math.min 1, (Date.now() - start) / ms
+      update t
       @render()
-      if @hit_limit
+      if check_limit and @hit_limit
         @scale_target = @scale
         @do_zoom @hit_limit, @c.width/2, @c.height/2
       else
@@ -636,16 +632,18 @@ class Ocicle
 
 
   setup_context: () ->
-    cw = @c.parentElement.clientWidth
-    if @c.width != cw then @c.width = cw
-    ch = @c.parentElement.clientHeight
-    if @c.height != ch then @c.height = ch
+    @cw = @c.parentElement.clientWidth
+    if @c.width != @cw then @c.width = @cw
+    @ch = @c.parentElement.clientHeight
+    if @c.height != @ch then @c.height = @ch
+    @cw2 = @cw / 2
+    @ch2 = @ch / 2
 
     ctx = @c.getContext '2d'
-    ctx.clearRect 0, 0, cw, ch
-    [ctx, cw, ch]
+    ctx.clearRect 0, 0, @cw, @ch
+    ctx
 
-  draw_background: (ctx, cw, ch) ->
+  draw_background: (ctx) ->
     return unless @bkgd_image.complete
 
     img = @bkgd_image.dom
@@ -657,18 +655,18 @@ class Ocicle
       sz = img.naturalWidth * @scale / s
       sx = ((@pan_x % sz) + sz) % sz
       sy = ((@pan_y % sz) + sz) % sz
-      for c in [-1..cw/sz]
-        for r in [-1..ch/sz]
+      for c in [-1..@cw/sz]
+        for r in [-1..@ch/sz]
           ctx.drawImage img, sx + c * sz, sy + r * sz, sz, sz
 
     ctx.globalAlpha = 1
 
-  update_highlight_image: (cw, ch) ->
+  update_highlight_image: () ->
     # must be over center point of canvas
-    [i] = @find_containing_image_canvas cw/2, ch/2
+    [i] = @find_containing_image_canvas @cw2, @ch2
     # and must be at least half the width or height
     if i
-      if i.pw * @scale / cw < 0.5 and i.ph * @scale / ch < 0.5
+      if i.pw * @scale / @cw < 0.5 and i.ph * @scale / @ch < 0.5
         i = null
     # update description
     set_text 'desc', i?.meta.desc or ''
@@ -688,33 +686,33 @@ class Ocicle
   snap: (x) ->
     if @gridsize then @gridsize * Math.round x / @gridsize else x
 
-  draw_grid: (ctx, cw, ch) ->
+  draw_grid: (ctx) ->
     return unless @gridsize and @editmode
     ctx.beginPath()
     x = @snap -@pan_x / @scale
     y = @snap -@pan_y / @scale
-    end_x = (cw - @pan_x) / @scale
-    end_y = (ch - @pan_y) / @scale
+    end_x = (@cw - @pan_x) / @scale
+    end_y = (@ch - @pan_y) / @scale
     while x < end_x
       dx = 0.5 + Math.floor x * @scale + @pan_x
       ctx.moveTo dx, 0
-      ctx.lineTo dx, ch
+      ctx.lineTo dx, @ch
       x += @gridsize
     while y < end_y
       dy = 0.5 + Math.floor y * @scale + @pan_y
       ctx.moveTo 0, dy
-      ctx.lineTo cw, dy
+      ctx.lineTo @cw, dy
       y += @gridsize
     ctx.lineWidth = 1
     ctx.strokeStyle = 'hsl(210,5%,25%)'
     ctx.stroke()
 
   render: () ->
-    [ctx, cw, ch] = @setup_context()
-    @draw_background ctx, cw, ch
-    @update_highlight_image cw, ch
+    ctx = @setup_context()
+    @draw_background ctx
+    @update_highlight_image()
     @update_fps()
-    @draw_grid ctx, cw, ch
+    @draw_grid ctx
 
     ctx.lineWidth = Math.max 1, FRAME_WIDTH * @scale
     ctx.strokeStyle = 'hsl(210,5%,5%)'
