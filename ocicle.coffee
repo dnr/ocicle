@@ -101,7 +101,40 @@ calc_scale_alphas = (scale) ->
 parabola = (y1, y2, y3) ->
   a = y1 + y2 - 2 * y3 - 2 * Math.sqrt (y3 - y1) * (y3 - y2)
   b = (y2 - y1) - a
-  return [a, b, y1]
+  [a, b, y1]
+
+asinh = (x) ->
+  Math.log(x + Math.sqrt(x * x + 1))
+
+# Arc length of ax^2+bx+c from 0 to x
+parabola_len = (a, b, x) ->
+  f = (t) ->
+    s = Math.sqrt 4 * a * a * t * t + 4 * a * b * t + b * b + 1
+    s *= 2 * a * t + b
+    s += asinh 2 * a * t + b
+    s / (4 * a)
+  f(x) - f(0)
+
+find_root = (f, x1, x2) ->
+  f1 = f(x1)
+  f2 = f(x2)
+  for iter in [1..10]
+    x3 = (f2 * x1 - f1 * x2) / (f2 - f1)
+    f3 = f(x3)
+    if Math.abs(f3) < 0.00001
+      return x3
+    if f1 * f3 > 0
+      x1 = x3
+      f1 = f3
+    else
+      x2 = x3
+      f2 = f3
+  return x3
+
+# Find x such that parabola_len a, b, x == s
+inverse_parabola_len = (a, b, s) ->
+  f = (x) -> parabola_len(a, b, x) - s
+  find_root f, 0, 1
 
 
 # storage interface:
@@ -558,6 +591,7 @@ class Ocicle
     mid_gz = Math.max(start_gz, end_gz) + dist / diag / 2
 
     [a, b, c] = parabola start_gz, end_gz, mid_gz
+    total_s = parabola_len a, b, 1
 
     ms = 1500
 
@@ -565,6 +599,7 @@ class Ocicle
     start = Date.now() - 5
     frame = () =>
       t = Math.min 1, (Date.now() - start) / ms
+      t = inverse_parabola_len a, b, t * total_s
 
       gz = a * t * t + b * t + c
       gx = start_gx + t * dist * Math.cos theta
