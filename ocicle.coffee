@@ -97,57 +97,11 @@ calc_scale_alphas = (scale) ->
       Math.max 0, 1 - Math.pow(ratio, 2)
   weights_to_alphas weights
 
-
-
-parabola = (x1, y1, x2, y2, y3) ->
-  x1p2 = x1 * x1
-  x2p2 = x2 * x2
-  x1p3 = x1p2 * x1
-  x2p3 = x2p2 * x2
-  x1p4 = x1p2 * x1p2
-  x2p4 = x2p2 * x2p2
-
-  L = Math.pow(x2 - x1, 4)
-  R = Math.sqrt L * (y3 - y1) * (y3 - y2)
-  # flip sign of R for alt
-
-  a = (x1p2 * y1                \
-       + x1p2 * y2              \
-       - 2 * x1p2 * y3          \
-       - 2 * x2 * x1 * y1       \
-       - 2 * x2 * x1 * y2       \
-       + 4 * x2 * x1 * y3       \
-       + x2p2 * y1              \
-       + x2p2 * y2              \
-       - 2 * x2p2 * y3          \
-       - 2 * R) / L
-
-  b = (x1p3 * y2                \
-       - x1p3 * y3              \
-       + x2 * x1p2 * y1         \
-       - 2 * x2 * x1p2 * y2     \
-       + x2 * x1p2 * y3         \
-       - 2 * x2p2 * x1 * y1     \
-       + x2p2 * x1 * y2         \
-       + x2p2 * x1 * y3         \
-       - x1 * R                 \
-       + x2p3 * y1              \
-       - x2p3 * y3              \
-       - x2 * R) * -2 / L
-
-  c = (x1p4 * y2                \
-       - 2 * x2 * x1p3 * y2     \
-       - 2 * x2 * x1p3 * y3     \
-       + x2p2 * x1p2 * y1       \
-       + x2p2 * x1p2 * y2       \
-       + 4 * x2p2 * x1p2 * y3   \
-       - 2 * x2p3 * x1 * y1     \
-       - 2 * x2p3 * x1 * y3     \
-       - 2 * x2 * x1 * R        \
-       + x2p4 * y1) / L
-
-  return [a, b, c]
-
+# Fits a parabola to (0, y1), (1, y2), (_, y3)
+parabola = (y1, y2, y3) ->
+  a = y1 + y2 - 2 * y3 - 2 * Math.sqrt (y3 - y1) * (y3 - y2)
+  b = (y2 - y1) - a
+  return [a, b, y1]
 
 
 # storage interface:
@@ -603,7 +557,7 @@ class Ocicle
 
     mid_gz = Math.max(start_gz, end_gz) + dist / diag / 2
 
-    [a, b, c] = parabola 0, start_gz, 1, end_gz, mid_gz
+    [a, b, c] = parabola start_gz, end_gz, mid_gz
 
     ms = 1500
 
