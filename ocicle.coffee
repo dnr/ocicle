@@ -97,8 +97,57 @@ calc_scale_alphas = (scale) ->
       Math.max 0, 1 - Math.pow(ratio, 2)
   weights_to_alphas weights
 
-close = (a, b) ->
-  Math.abs(a - b) < 0.000000001
+
+
+parabola = (x1, y1, x2, y2, y3) ->
+  x1p2 = x1 * x1
+  x2p2 = x2 * x2
+  x1p3 = x1p2 * x1
+  x2p3 = x2p2 * x2
+  x1p4 = x1p2 * x1p2
+  x2p4 = x2p2 * x2p2
+
+  L = Math.pow(x2 - x1, 4)
+  R = Math.sqrt L * (y3 - y1) * (y3 - y2)
+  # flip sign of R for alt
+
+  a = (x1p2 * y1                \
+       + x1p2 * y2              \
+       - 2 * x1p2 * y3          \
+       - 2 * x2 * x1 * y1       \
+       - 2 * x2 * x1 * y2       \
+       + 4 * x2 * x1 * y3       \
+       + x2p2 * y1              \
+       + x2p2 * y2              \
+       - 2 * x2p2 * y3          \
+       - 2 * R) / L
+
+  b = (x1p3 * y2                \
+       - x1p3 * y3              \
+       + x2 * x1p2 * y1         \
+       - 2 * x2 * x1p2 * y2     \
+       + x2 * x1p2 * y3         \
+       - 2 * x2p2 * x1 * y1     \
+       + x2p2 * x1 * y2         \
+       + x2p2 * x1 * y3         \
+       - x1 * R                 \
+       + x2p3 * y1              \
+       - x2p3 * y3              \
+       - x2 * R) * -2 / L
+
+  c = (x1p4 * y2                \
+       - 2 * x2 * x1p3 * y2     \
+       - 2 * x2 * x1p3 * y3     \
+       + x2p2 * x1p2 * y1       \
+       + x2p2 * x1p2 * y2       \
+       + 4 * x2p2 * x1p2 * y3   \
+       - 2 * x2p3 * x1 * y1     \
+       - 2 * x2p3 * x1 * y3     \
+       - 2 * x2 * x1 * R        \
+       + x2p4 * y1) / L
+
+  return [a, b, c]
+
 
 
 # storage interface:
@@ -539,17 +588,22 @@ class Ocicle
     cw = @c.width
     ch = @c.height
 
-    left = Math.min((0 - start_x) / start_s, (0 - end_x) / end_s)
-    right = Math.max((cw - start_x) / start_s, (cw - end_x) / end_s)
-    top = Math.min((0 - start_y) / start_s, (0 - end_y) / end_s)
-    bottom = Math.max((ch - start_y) / start_s, (ch - end_y) / end_s)
-    mid_s = Math.min(cw / (right - left), ch / (bottom - top))
-    mid_x = -left * mid_s
-    mid_y = -top * mid_s
+    start_gx = (cw / 2 - start_x) / start_s
+    start_gy = (ch / 2 - start_y) / start_s
+    start_gz = 1 / start_s
+    end_gx = (cw / 2 - end_x) / end_s
+    end_gy = (ch / 2 - end_y) / end_s
+    end_gz = 1 / end_s
 
-#    if close(mid_x, start_x) and close(mid_y, start_y) and close(mid_s, start_s)
-#      @navigate_to end_s, end_x, end_y
-#      return
+    dy = end_gy - start_gy
+    dx = end_gx - start_gx
+    theta = Math.atan2 dy, dx
+    dist = Math.sqrt dx * dx + dy * dy
+    diag = Math.sqrt cw * cw + ch * ch
+
+    mid_gz = Math.max(start_gz, end_gz) + dist / diag / 2
+
+    [a, b, c] = parabola 0, start_gz, 1, end_gz, mid_gz
 
     ms = 1500
 
@@ -557,18 +611,15 @@ class Ocicle
     start = Date.now() - 5
     frame = () =>
       t = Math.min 1, (Date.now() - start) / ms
-      if t < 0.5
-        t *= 2
-        nt = 1 - t
-        @pan_x = start_x * nt + mid_x * t
-        @pan_y = start_y * nt + mid_y * t
-        @scale = start_s * nt + mid_s * t
-      else
-        t = (t - 0.5) * 2
-        nt = 1 - t
-        @pan_x = mid_x * nt + end_x * t
-        @pan_y = mid_y * nt + end_y * t
-        @scale = mid_s * nt + end_s * t
+
+      gz = a * t * t + b * t + c
+      gx = start_gx + t * dist * Math.cos theta
+      gy = start_gy + t * dist * Math.sin theta
+
+      @scale = 1 / gz
+      @pan_x = cw / 2 - @scale * gx
+      @pan_y = ch / 2 - @scale * gy
+
       @render()
       @request_id = if t < 1 then requestFrame frame, @c
     frame()
