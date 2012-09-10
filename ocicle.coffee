@@ -97,6 +97,9 @@ calc_scale_alphas = (scale) ->
       Math.max 0, 1 - Math.pow(ratio, 2)
   weights_to_alphas weights
 
+close = (a, b) ->
+  Math.abs(a - b) < 0.000000001
+
 
 # storage interface:
 # get: key, (value) -> ...
@@ -318,7 +321,7 @@ class Ocicle
       a = document.createElement 'a'
       a.href = '#'
       a.innerText = mark.name
-      a.onclick = do (mark) => () => @navigate_to mark.scale, mark.x, mark.y
+      a.onclick = do (mark) => () => @fly_to mark.scale, mark.x, mark.y
       li.appendChild a
       ul.appendChild li
 
@@ -429,7 +432,7 @@ class Ocicle
                              (@c.height - CENTER_BORDER) / i.ph
             pan_x = @c.width / 2 - (i.px + i.pw / 2) * scale
             pan_y = @c.height / 2 - (i.py + i.ph / 2) * scale
-            @navigate_to scale, pan_x, pan_y
+            @fly_to scale, pan_x, pan_y
       @drag_state = 0
 
     mousewheel: (e) ->
@@ -527,6 +530,48 @@ class Ocicle
       {start: @scale, end: @scale_target = scale, set: (@scale) =>}
     ]
     @animate props, ANIMATE_MS
+
+  fly_to: (end_s, end_x, end_y) ->
+    @scale_target = end_s
+    start_x = @pan_x
+    start_y = @pan_y
+    start_s = @scale
+    cw = @c.width
+    ch = @c.height
+
+    left = Math.min((0 - start_x) / start_s, (0 - end_x) / end_s)
+    right = Math.max((cw - start_x) / start_s, (cw - end_x) / end_s)
+    top = Math.min((0 - start_y) / start_s, (0 - end_y) / end_s)
+    bottom = Math.max((ch - start_y) / start_s, (ch - end_y) / end_s)
+    mid_s = Math.min(cw / (right - left), ch / (bottom - top))
+    mid_x = -left * mid_s
+    mid_y = -top * mid_s
+
+#    if close(mid_x, start_x) and close(mid_y, start_y) and close(mid_s, start_s)
+#      @navigate_to end_s, end_x, end_y
+#      return
+
+    ms = 1500
+
+    @stop_animation()
+    start = Date.now() - 5
+    frame = () =>
+      t = Math.min 1, (Date.now() - start) / ms
+      if t < 0.5
+        t *= 2
+        nt = 1 - t
+        @pan_x = start_x * nt + mid_x * t
+        @pan_y = start_y * nt + mid_y * t
+        @scale = start_s * nt + mid_s * t
+      else
+        t = (t - 0.5) * 2
+        nt = 1 - t
+        @pan_x = mid_x * nt + end_x * t
+        @pan_y = mid_y * nt + end_y * t
+        @scale = mid_s * nt + end_s * t
+      @render()
+      @request_id = if t < 1 then requestFrame frame, @c
+    frame()
 
   stop_animation: () ->
     cancelFrame @request_id if @request_id
