@@ -116,21 +116,28 @@ parabola_len = (a, b, x) ->
     s / (4 * a)
   f(x) - f(0)
 
-find_root = (f, x1, x2) ->
+# Finds a root of f using Ridders' method. x1 and x2 must bound root.
+# http://en.wikipedia.org/wiki/Ridders%27_method
+find_root = (f, x1, x2, thresh=0.000001) ->
   f1 = f(x1)
   f2 = f(x2)
   for iter in [1..10]
-    x3 = (f2 * x1 - f1 * x2) / (f2 - f1)
+    x3 = (x1 + x2) / 2
     f3 = f(x3)
-    if Math.abs(f3) < 0.00001
-      return x3
-    if f1 * f3 > 0
+    return x3 if Math.abs(f3) < thresh
+    s = if f1 - f2 > 0 then 1 else -1
+    x4 = x3 + (x3 - x1) * s * f3 / Math.sqrt f3 * f3 - f1 * f2
+    f4 = f(x4)
+    return x4 if Math.abs(f4) < thresh
+    if f3 * f4 < 0
       x1 = x3
       f1 = f3
-    else
-      x2 = x3
-      f2 = f3
-  return x3
+    else if f2 * f4 < 0
+      x1 = x2
+      f1 = f2
+    x2 = x4
+    f2 = f4
+  return x4
 
 # Find x such that parabola_len a, b, x == s
 inverse_parabola_len = (a, b, s) ->
