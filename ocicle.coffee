@@ -3,6 +3,10 @@
 # use more detailed scales when zooming out.
 # do more pre-fetching all around.
 # resize top and bottom bars based on font size.
+# tab or something to jump to "next" image.
+# change marks (and maybe more) to use different coords:
+#   extent of central vertical line
+# background: don't do loop, figure out appropriate coords.
 
 DRAG_FACTOR = 2
 DRAG_THRESHOLD = 3
@@ -158,7 +162,6 @@ class Storage
       else if req.status == 404
         cb null
       else
-        #console.log req.responseText
         cb false
 
   set: (key, value, cb) ->
@@ -321,7 +324,6 @@ class DZImage
             break
           else if level2 == level
             if not img
-              #console.log 'loading: ' + src
               img = new ImageLoader src
               tile_cache.put src, img
             img.add_cb cb
