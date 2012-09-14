@@ -437,6 +437,33 @@ class Ocicle
         @meta.data.images.splice midx, 1
         @render()
 
+      reorder = (pos) =>
+        return unless @highlight_image
+        idx = @images.indexOf @highlight_image
+        midx = @meta.data.images.indexOf @highlight_image.meta
+        if idx != midx or idx < 0
+          return console.log "couldn't find images: " + idx + ',' + midx
+        [img] = @images.splice idx, 1
+        [mimg] = @meta.data.images.splice idx, 1
+        if pos == 'first'
+          @images.unshift img
+          @meta.data.images.unshift mimg
+        else if pos == 'last'
+          @images.push img
+          @meta.data.images.push mimg
+        else if pos == 'up'
+          @images.splice idx-1, 0, img
+          @meta.data.images.splice idx-1, 0, mimg
+        else if pos == 'down'
+          @images.splice idx+1, 0, img
+          @meta.data.images.splice idx+1, 0, mimg
+        @render()
+
+      $('order_first').addEventListener 'click', () -> reorder 'first'
+      $('order_last').addEventListener 'click', () -> reorder 'last'
+      $('order_up').addEventListener 'click', () -> reorder 'up'
+      $('order_down').addEventListener 'click', () -> reorder 'down'
+
       @render()
 
   find_containing_image_client: (x, y) ->
@@ -703,7 +730,7 @@ class Ocicle
     set_text 'fps', @fps.toFixed 0
     @last_now = now
     #set_text 'zoom', (Math.log(@scale) / Math.LN2).toFixed 1
-    set_text 'tiles', @tile_cache.puts
+    #set_text 'tiles', @tile_cache.puts
 
   snap: (x) ->
     if @gridsize then @gridsize * Math.round x / @gridsize else x
@@ -774,6 +801,20 @@ class Ocicle
       i.render_onto_ctx ctx, @tile_cache, x, y, w, h, @img_load_cb
 
       ctx.restore()
+
+    # draw links
+    if @editmode
+      ctx.lineWidth = 3
+      ctx.strokeStyle = 'rgba(0,200,0,0.5)'
+      ctx.beginPath()
+      for i in @images
+        x = (i.px + i.pw/2) * @scale + @pan_x
+        y = (i.py + i.ph/2) * @scale + @pan_y
+        if i is @images[0]
+          ctx.moveTo x, y
+        else
+          ctx.lineTo x, y
+      ctx.stroke()
 
     if max_ratio == 0
       set_text 'ratio', ''

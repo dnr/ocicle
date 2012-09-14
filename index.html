@@ -8,8 +8,8 @@
 	<body class='normal'>
 		<div id='topbar'>
 			<div>
-				<div id='gotopopup'>
-					<span id='gotobase'>go&hellip;</span>
+				<div class='popup'>
+					<span>go&hellip;</span>
 					<ul id='gotolist'>
 					</ul>
 				</div>
@@ -18,7 +18,6 @@
 			<div><a href='javascript:BigScreen.toggle()'>full screen</a></div>
 			<div>ratio: <span id='ratio'></span></div>
 			<div>fps: <span id='fps'></span></div>
-			<div>tiles: <span id='tiles'></span></div>
 			<div class='edit'>
 				<label>
 					mark
@@ -43,6 +42,17 @@
 			</div>
 			<div class='edit'>
 				<input id='delete' type='button' value='delete'>
+			</div>
+			<div class='edit'>
+				<div class='popup'>
+					<span>reorder&hellip;</span>
+					<ul>
+						<input id='order_first' type='button' value='move to first'>
+						<input id='order_last' type='button' value='move to last'>
+						<input id='order_up' type='button' value='move up'>
+						<input id='order_down' type='button' value='move down'>
+					</ul>
+				</div>
 			</div>
 		</div>
 		<div id='mainbox'>

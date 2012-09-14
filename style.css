@@ -29,12 +29,12 @@ a:hover {
 	padding-left: 2em;
 }
 
-#gotopopup {
+.popup {
 	background: #181818;
 	position: relative;
 }
 
-#gotopopup > ul {
+.popup > ul {
 	display: none;
 	position: absolute;
 	margin: 0;
@@ -44,11 +44,11 @@ a:hover {
 	background: inherit;
 }
 
-#gotopopup:hover > ul {
+.popup:hover > ul {
 	display: block;
 }
 
-#gotopopup li {
+.popup li {
 	margin: 0.5ex;
 }
 
