@@ -387,7 +387,7 @@ class Ocicle
     else
       @editmode = true
       editlink.innerText = 'save'
-      body = document.getElementsByTagName('body')[0]
+      [body] = document.getElementsByTagName('body')
       body.className = 'edit'
 
       desc = $ 'desc'
@@ -511,14 +511,8 @@ class Ocicle
           factor = if e.button == 0 then CLICK_ZOOM_FACTOR else 1/CLICK_ZOOM_FACTOR
           @do_zoom factor, e.clientX, e.clientY
         else if e.button == 1
-          # center around image
           [i] = @find_containing_image_client e.clientX, e.clientY
-          if i
-            scale = Math.min (@c.width - CENTER_BORDER) / i.pw,
-                             (@c.height - CENTER_BORDER) / i.ph
-            pan_x = @c.width / 2 - (i.px + i.pw / 2) * scale
-            pan_y = @c.height / 2 - (i.py + i.ph / 2) * scale
-            @fly_to scale, pan_x, pan_y
+          @center_around i
       @drag_state = 0
 
     mousewheel: (e) ->
@@ -598,6 +592,23 @@ class Ocicle
       @drag_state = 0
 
     mousewheel: interaction_normal.mousewheel
+
+  nav: (dir) ->
+    if @highlight_image
+      idx = @images.indexOf @highlight_image
+      idx += dir
+      return if idx < 0 or idx >= @images.length
+      @center_around @images[idx]
+    else
+      @center_around @images[0]
+
+  center_around: (i) ->
+    return unless i
+    scale = Math.min (@c.width - CENTER_BORDER) / i.pw,
+                     (@c.height - CENTER_BORDER) / i.ph
+    pan_x = @c.width / 2 - (i.px + i.pw / 2) * scale
+    pan_y = @c.height / 2 - (i.py + i.ph / 2) * scale
+    @fly_to scale, pan_x, pan_y
 
   do_zoom: (factor, client_x, client_y) ->
     bounds = @c.getBoundingClientRect()
