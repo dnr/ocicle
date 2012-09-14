@@ -7,6 +7,7 @@
 # change marks (and maybe more) to use different coords:
 #   extent of central vertical line
 # background: don't do loop, figure out appropriate coords.
+# think about how to integrate super-wide or 360 panos.
 
 DRAG_FACTOR = 2
 DRAG_THRESHOLD = 3
@@ -128,9 +129,10 @@ find_root = (f, x1, x2, thresh=0.000001) ->
   for iter in [1..10]
     x3 = (x1 + x2) / 2
     f3 = f(x3)
-    return x3 if Math.abs(f3) < thresh
     s = if f1 - f2 > 0 then 1 else -1
-    x4 = x3 + (x3 - x1) * s * f3 / Math.sqrt f3 * f3 - f1 * f2
+    r = Math.sqrt f3 * f3 - f1 * f2
+    return x3 if r == 0
+    x4 = x3 + (x3 - x1) * s * f3 / r
     f4 = f(x4)
     return x4 if Math.abs(f4) < thresh
     if f3 * f4 < 0
@@ -422,6 +424,17 @@ class Ocicle
       gridsize = $ 'gridsize'
       gridsize.addEventListener 'change', () =>
         @gridsize = parseInt gridsize.value
+        @render()
+
+      delbutton = $ 'delete'
+      delbutton.addEventListener 'click', () =>
+        return unless @highlight_image
+        idx = @images.indexOf @highlight_image
+        midx = @meta.data.images.indexOf @highlight_image.meta
+        if idx < 0 or midx < 0
+          return console.log "couldn't find images: " + idx + ',' + midx
+        @images.splice idx, 1
+        @meta.data.images.splice midx, 1
         @render()
 
       @render()
