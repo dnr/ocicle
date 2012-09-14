@@ -16,7 +16,7 @@ CENTER_BORDER = 40
 DEBUG_BORDERS = false
 ZOOM_LIMIT_LIMIT = 3.3
 ZOOM_LIMIT_TARGET = 3.0
-UNZOOM_LIMIT = 1/10
+UNZOOM_LIMIT = 10
 
 BKGD_SCALEFACTOR = 8
 BKGD_SCALES = (Math.pow(BKGD_SCALEFACTOR, scale) for scale in [-1..3])
@@ -172,6 +172,7 @@ class Storage
 # marks = [{
 #   name: name
 #   x, y: pan_x, pan_y
+#   # FIXME: marks to zoom
 #   scale: scale
 # }]
 class Metadata
@@ -278,11 +279,11 @@ class DZImage
     tile_size = @meta.ts
 
     level = @clip_level 1 + @find_level Math.max w, h
-    source_scale = 1 << (@max_level - level)
-    max_c = @w / source_scale / tile_size
-    max_r = @h / source_scale / tile_size
+    source_res = 1 << (@max_level - level)
+    max_c = @w / source_res / tile_size
+    max_r = @h / source_res / tile_size
     # this assumes the aspect ratio is preserved:
-    draw_scale = w / @w * source_scale
+    draw_scale = w / @w * source_res
     draw_ts = tile_size * draw_scale
 
     for c in [0 .. max_c]
@@ -345,7 +346,7 @@ class Ocicle
     @setup_bookmarks()
     @tile_cache = new LruCache TILE_CACHE_SIZE
     @pan_x = @pan_y = 0
-    @scale = @scale_target = 1
+    @zoom = @zoom_target = 1
     @gridsize = parseInt $('gridsize').value
     @render()
 
@@ -357,7 +358,8 @@ class Ocicle
       a = document.createElement 'a'
       a.href = '#'
       a.innerText = mark.name
-      a.onclick = do (mark) => () => @fly_to mark.scale, mark.x, mark.y
+      # FIXME: marks to zoom
+      a.onclick = do (mark) => () => @fly_to 1/mark.scale, mark.x, mark.y
       li.appendChild a
       ul.appendChild li
 
@@ -399,13 +401,13 @@ class Ocicle
         if mark
           mark.x = @pan_x
           mark.y = @pan_y
-          mark.scale = @scale
+          mark.zoom = @zoom
         else
           mark =
             name: name
             x: @pan_x
             y: @pan_y
-            scale: @scale
+            zoom: @zoom
           @meta.data.marks.push mark
         @setup_bookmarks()
 
@@ -421,8 +423,8 @@ class Ocicle
     @find_containing_image_canvas x - bounds.left, y - bounds.top
 
   find_containing_image_canvas: (x, y) ->
-    x = (x - @pan_x) / @scale
-    y = (y - @pan_y) / @scale
+    x = (x - @pan_x) * @zoom
+    y = (y - @pan_y) * @zoom
     for i in @images
       if x >= i.px and y >= i.py and x <= i.px + i.pw and y <= i.py + i.ph
         xr = (x - i.px) / i.pw * 6
@@ -452,31 +454,31 @@ class Ocicle
         if @drag_state >= 2
           pan_x = @drag_pan_x + DRAG_FACTOR * move_x
           pan_y = @drag_pan_y + DRAG_FACTOR * move_y
-          @navigate_to @scale, pan_x, pan_y
+          @navigate_to @zoom, pan_x, pan_y
 
     mouseup: (e) ->
       if @drag_state == 1
         e.preventDefault()
         if e.button == 0 or e.button == 2
-          factor = if e.button == 0 then CLICK_ZOOM_FACTOR else 1/CLICK_ZOOM_FACTOR
+          factor = if e.button == 0 then 1/CLICK_ZOOM_FACTOR else CLICK_ZOOM_FACTOR
           @do_zoom factor, e.clientX, e.clientY
         else if e.button == 1
           # center around image
           [i] = @find_containing_image_client e.clientX, e.clientY
           if i
-            scale = Math.min (@c.width - CENTER_BORDER) / i.pw,
-                             (@c.height - CENTER_BORDER) / i.ph
-            pan_x = @c.width / 2 - (i.px + i.pw / 2) * scale
-            pan_y = @c.height / 2 - (i.py + i.ph / 2) * scale
-            @fly_to scale, pan_x, pan_y
+            zoom = Math.min i.pw / (@c.width - CENTER_BORDER),
+                            i.ph / (@c.height - CENTER_BORDER)
+            pan_x = @c.width / 2 - (i.px + i.pw / 2) / zoom
+            pan_y = @c.height / 2 - (i.py + i.ph / 2) / zoom
+            @fly_to zoom, pan_x, pan_y
       @drag_state = 0
 
     mousewheel: (e) ->
       e.preventDefault()
       if e.wheelDelta
-        factor = if e.wheelDelta > 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
+        factor = if e.wheelDelta > 0 then 1/WHEEL_ZOOM_FACTOR else WHEEL_ZOOM_FACTOR
       else
-        factor = if e.detail < 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
+        factor = if e.detail < 0 then 1/WHEEL_ZOOM_FACTOR else WHEEL_ZOOM_FACTOR
       @do_zoom factor, e.clientX, e.clientY
 
   interaction_edit =
@@ -512,22 +514,22 @@ class Ocicle
         aspect = @drag_img.w / @drag_img.h
         drag_ph = @drag_pw / aspect
         if xa == 1  # right
-          x = @snap @drag_px + @drag_pw + move_x / @scale
+          x = @snap @drag_px + @drag_pw + move_x * @zoom
           @drag_img.scale x - @drag_px
         else if xa == -1  # left
-          x = @snap @drag_px + move_x / @scale
+          x = @snap @drag_px + move_x * @zoom
           @drag_img.move x, @drag_py
           @drag_img.scale @drag_pw + @drag_px - x
         else if ya == 1  # bottom
-          y = @snap @drag_py + drag_ph + move_y / @scale
+          y = @snap @drag_py + drag_ph + move_y * @zoom
           @drag_img.scale aspect * (y - @drag_py)
         else if ya == -1  # top
-          y = @snap @drag_py + move_y / @scale
+          y = @snap @drag_py + move_y * @zoom
           @drag_img.move @drag_px, y
           @drag_img.scale aspect * (drag_ph + @drag_py - y)
         else  # center
-          x = @drag_px + move_x / @scale
-          y = @drag_py + move_y / @scale
+          x = @drag_px + move_x * @zoom
+          y = @drag_py + move_y * @zoom
           snap_and_dist = (w, h) =>
             sx = @snap x + w
             sy = @snap y + h
@@ -554,33 +556,31 @@ class Ocicle
     center_x = client_x - bounds.left
     center_y = client_y - bounds.top
 
-    @scale_target *= factor
-    pan_x = center_x - @scale_target / @scale * (center_x - @pan_x)
-    pan_y = center_y - @scale_target / @scale * (center_y - @pan_y)
-    @navigate_to @scale_target, pan_x, pan_y
+    @zoom_target *= factor
+    pan_x = center_x - @zoom / @zoom_target * (center_x - @pan_x)
+    pan_y = center_y - @zoom / @zoom_target * (center_y - @pan_y)
+    @navigate_to @zoom_target, pan_x, pan_y
 
-  navigate_to: (scale, pan_x, pan_y) ->
+  navigate_to: (zoom, pan_x, pan_y) ->
     props = [
       {start: @pan_x, end: pan_x, set: (@pan_x) =>}
       {start: @pan_y, end: pan_y, set: (@pan_y) =>}
-      {start: @scale, end: @scale_target = scale, set: (@scale) =>}
+      {start: @zoom, end: @zoom_target = zoom, set: (@zoom) =>}
     ]
     @animate props, ANIMATE_MS
 
-  fly_to: (end_s, end_x, end_y) ->
-    @scale_target = end_s
+  fly_to: (end_z, end_x, end_y) ->
+    @zoom_target = end_z
     start_x = @pan_x
     start_y = @pan_y
-    start_s = @scale
+    start_z = @zoom
     cw = @c.width
     ch = @c.height
 
-    start_gx = (cw / 2 - start_x) / start_s
-    start_gy = (ch / 2 - start_y) / start_s
-    start_gz = 1 / start_s
-    end_gx = (cw / 2 - end_x) / end_s
-    end_gy = (ch / 2 - end_y) / end_s
-    end_gz = 1 / end_s
+    start_gx = (cw / 2 - start_x) * start_z
+    start_gy = (ch / 2 - start_y) * start_z
+    end_gx = (cw / 2 - end_x) * end_z
+    end_gy = (ch / 2 - end_y) * end_z
 
     dy = end_gy - start_gy
     dx = end_gx - start_gx
@@ -588,9 +588,9 @@ class Ocicle
     dist = Math.sqrt dx * dx + dy * dy
     diag = Math.sqrt cw * cw + ch * ch
 
-    mid_gz = Math.max(start_gz, end_gz) + dist / diag / 2
+    mid_z = Math.max(start_z, end_z) + dist / diag / 2
 
-    [a, b, c] = parabola start_gz, end_gz, mid_gz
+    [a, b, c] = parabola start_z, end_z, mid_z
     total_s = parabola_len a, b, 1
 
     ms = 1500
@@ -601,13 +601,11 @@ class Ocicle
       t = Math.min 1, (Date.now() - start) / ms
       t = inverse_parabola_len a, b, t * total_s
 
-      gz = a * t * t + b * t + c
+      @zoom = a * t * t + b * t + c
       gx = start_gx + t * dist * Math.cos theta
+      @pan_x = cw / 2 - gx / @zoom
       gy = start_gy + t * dist * Math.sin theta
-
-      @scale = 1 / gz
-      @pan_x = cw / 2 - @scale * gx
-      @pan_y = ch / 2 - @scale * gy
+      @pan_y = ch / 2 - gy / @zoom
 
       @render()
       @request_id = if t < 1 then requestFrame frame, @c
@@ -625,7 +623,7 @@ class Ocicle
         prop.set prop.start * (1-t) + prop.end * t
       @render()
       if @hit_limit
-        @scale_target = @scale
+        @zoom_target = @zoom
         @do_zoom @hit_limit, @c.width/2, @c.height/2
       else
         @request_id = if t < 1 then requestFrame frame, @c
@@ -649,12 +647,12 @@ class Ocicle
     return unless @bkgd_image.complete
 
     img = @bkgd_image.dom
-    alphas = calc_scale_alphas @scale
+    alphas = calc_scale_alphas 1/@zoom
     for s in BKGD_SCALES
       alpha = alphas.shift()
       continue unless alpha
       ctx.globalAlpha = alpha
-      sz = img.naturalWidth * @scale / s
+      sz = img.naturalWidth / @zoom / s
       sx = ((@pan_x % sz) + sz) % sz
       sy = ((@pan_y % sz) + sz) % sz
       for c in [-1..cw/sz]
@@ -668,7 +666,7 @@ class Ocicle
     [i] = @find_containing_image_canvas cw/2, ch/2
     # and must be at least half the width or height
     if i
-      if i.pw * @scale / cw < 0.5 and i.ph * @scale / ch < 0.5
+      if i.pw / @zoom / cw < 0.5 and i.ph / @zoom / ch < 0.5
         i = null
     # update description
     set_text 'desc', i?.meta.desc or ''
@@ -682,7 +680,6 @@ class Ocicle
     @fps = (1000 / ms + @fps * 9) / 10
     set_text 'fps', @fps.toFixed 0
     @last_now = now
-    #set_text 'zoom', (Math.log(@scale) / Math.LN2).toFixed 1
     set_text 'tiles', @tile_cache.puts
 
   snap: (x) ->
@@ -691,17 +688,17 @@ class Ocicle
   draw_grid: (ctx, cw, ch) ->
     return unless @gridsize and @editmode
     ctx.beginPath()
-    x = @snap -@pan_x / @scale
-    y = @snap -@pan_y / @scale
-    end_x = (cw - @pan_x) / @scale
-    end_y = (ch - @pan_y) / @scale
+    x = @snap -@pan_x * @zoom
+    y = @snap -@pan_y * @zoom
+    end_x = (cw - @pan_x) * @zoom
+    end_y = (ch - @pan_y) * @zoom
     while x < end_x
-      dx = 0.5 + Math.floor x * @scale + @pan_x
+      dx = 0.5 + Math.floor x / @zoom + @pan_x
       ctx.moveTo dx, 0
       ctx.lineTo dx, ch
       x += @gridsize
     while y < end_y
-      dy = 0.5 + Math.floor y * @scale + @pan_y
+      dy = 0.5 + Math.floor y / @zoom + @pan_y
       ctx.moveTo 0, dy
       ctx.lineTo cw, dy
       y += @gridsize
@@ -716,18 +713,18 @@ class Ocicle
     @update_fps()
     @draw_grid ctx, cw, ch
 
-    ctx.lineWidth = Math.max 1, FRAME_WIDTH * @scale
+    ctx.lineWidth = Math.max 1, FRAME_WIDTH / @zoom
     ctx.strokeStyle = 'hsl(210,5%,5%)'
     ctx.shadowColor = 'hsl(210,5%,15%)'
-    shadow = Math.max 1, FRAME_WIDTH * @scale / 2
+    shadow = Math.max 1, FRAME_WIDTH / @zoom / 2
     fw = ctx.lineWidth / 2
 
     max_ratio = 0
     for i in @images
-      x = i.px * @scale + @pan_x
-      y = i.py * @scale + @pan_y
-      w = i.pw * @scale
-      h = i.ph * @scale
+      x = i.px / @zoom + @pan_x
+      y = i.py / @zoom + @pan_y
+      w = i.pw / @zoom
+      h = i.ph / @zoom
       continue if rect_is_outside @c, x-fw, y-fw, w+3*fw, h+3*fw
 
       ctx.save()
@@ -765,8 +762,8 @@ class Ocicle
     @hit_limit = false
     if max_ratio > 0 and max_ratio < 1 / ZOOM_LIMIT_LIMIT
       @hit_limit = max_ratio * ZOOM_LIMIT_TARGET
-    else if @scale < UNZOOM_LIMIT
-      @hit_limit = 1.05
+    else if @zoom > UNZOOM_LIMIT
+      @hit_limit = 0.95
 
     return
 
