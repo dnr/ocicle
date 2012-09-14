@@ -16,19 +16,6 @@ a:hover {
 	text-decoration: underline;
 }
 
-#topbar {
-	float: top;
-	width: 100%;
-	font-size: x-large;
-	height: 4%;
-	background: #181818;
-}
-
-#topbar > div {
-	display: inline-block;
-	padding-left: 2em;
-}
-
 .popup {
 	background: #181818;
 	position: relative;
@@ -40,6 +27,7 @@ a:hover {
 	margin: 0;
 	padding: 0.5ex;
 	left: -1ex;
+	bottom: 1em;
 	list-style: none;
 	background: inherit;
 }
@@ -55,7 +43,7 @@ a:hover {
 #mainbox {
 	float: top;
 	width: 100%;
-	height: 90%;
+	height: 94%;
 }
 
 #bottombar {
@@ -65,9 +53,35 @@ a:hover {
 	background: #181818;
 }
 
+#bottombar > div {
+	float: left;
+}
+
+#bottomstuff {
+	width: 40%;
+}
+
+#bottomstuff > div {
+	font-size: larger;
+	display: inline-block;
+	padding-left: 2em;
+}
+
 #desc {
 	padding: 1ex;
 	text-align: center;
+}
+
+#info {
+	position: fixed;
+	right: 1em;
+	top: 1em;
+	color: black;
+	text-shadow:
+		-1px -1px 1px #aaa,
+		 -1px 1px 1px #aaa,
+		 1px -1px 1px #aaa,
+		 1px 1px 1px #aaa;
 }
 
 body.normal .edit {

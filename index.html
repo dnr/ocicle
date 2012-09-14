@@ -6,60 +6,62 @@
 		<script src='ocicle.js'></script>
 	</head>
 	<body class='normal'>
-		<div id='topbar'>
-			<div>
-				<div class='popup'>
-					<span>go&hellip;</span>
-					<ul id='gotolist'>
-					</ul>
-				</div>
-			</div>
-			<div><a href='javascript:ocicle.edit()' id='editlink'>edit</a></div>
-			<div><a href='javascript:BigScreen.toggle()'>full screen</a></div>
-			<div>ratio: <span id='ratio'></span></div>
-			<div>fps: <span id='fps'></span></div>
-			<div class='edit'>
-				<label>
-					mark
-					<input id='editmark' type='text' size='10'>
-				</label>
-			</div>
-			<div class='edit'>
-				<select id='shapeselect'>
-					<option value='0'>rect</option>
-					<option value='1'>circle</option>
-					<option value='2'>hex</option>
-				</select>
-			</div>
-			<div class='edit'>
-				<select id='gridsize'>
-					<option value='0'>no grid</option>
-					<option value='1'>1</option>
-					<option value='4' selected>4</option>
-					<option value='16'>16</option>
-					<option value='64'>64</option>
-				</select>
-			</div>
-			<div class='edit'>
-				<input id='delete' type='button' value='delete'>
-			</div>
-			<div class='edit'>
-				<div class='popup'>
-					<span>reorder&hellip;</span>
-					<ul>
-						<input id='order_first' type='button' value='move to first'>
-						<input id='order_last' type='button' value='move to last'>
-						<input id='order_up' type='button' value='move up'>
-						<input id='order_down' type='button' value='move down'>
-					</ul>
-				</div>
-			</div>
-		</div>
 		<div id='mainbox'>
 			<canvas id='c'></canvas>
 		</div>
 		<div id='bottombar'>
+			<div id='bottomstuff'>
+				<div>
+					<div class='popup'>
+						<span>go&hellip;</span>
+						<ul id='gotolist'>
+						</ul>
+					</div>
+				</div>
+				<div><a href='javascript:ocicle.edit()' id='editlink'>edit</a></div>
+				<div><a href='javascript:BigScreen.toggle()'>full screen</a></div>
+				<div class='edit'>
+					<label>
+						mark
+						<input id='editmark' type='text' size='10'>
+					</label>
+				</div>
+				<div class='edit'>
+					<select id='shapeselect'>
+						<option value='0'>rect</option>
+						<option value='1'>circle</option>
+						<option value='2'>hex</option>
+					</select>
+				</div>
+				<div class='edit'>
+					<select id='gridsize'>
+						<option value='0'>no grid</option>
+						<option value='1'>1</option>
+						<option value='4' selected>4</option>
+						<option value='16'>16</option>
+						<option value='64'>64</option>
+					</select>
+				</div>
+				<div class='edit'>
+					<input id='delete' type='button' value='delete'>
+				</div>
+				<div class='edit'>
+					<div class='popup'>
+						<span>reorder&hellip;</span>
+						<ul>
+							<input id='order_first' type='button' value='move to first'>
+							<input id='order_last' type='button' value='move to last'>
+							<input id='order_up' type='button' value='move up'>
+							<input id='order_down' type='button' value='move down'>
+						</ul>
+					</div>
+				</div>
+			</div>
 			<div id='desc'></div>
+		</div>
+		<div id='info'>
+			<div>fps: <span id='fps'></span></div>
+			<div>ratio: <span id='ratio'></span></div>
 		</div>
 	</body>
 </html>
