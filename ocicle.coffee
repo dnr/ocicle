@@ -111,7 +111,7 @@ calc_scale_alphas = (scale) ->
 # Fits a parabola to (0, y1), (1, y2), (_, y3)
 parabola = (y1, y2, y3) ->
   a = y1 + y2 - 2 * y3 - 2 * Math.sqrt (y3 - y1) * (y3 - y2)
-  b = (y2 - y1) - a
+  b = y2 - y1 - a
   [a, b, y1]
 
 asinh = (x) ->
@@ -368,7 +368,7 @@ class Ocicle
     @render()
 
   setup_bookmarks: () ->
-    ul = $ 'gotolist'
+    ul = $('gotolist')
     clear_node ul
     for mark in @meta.data.marks
       li = document.createElement 'li'
@@ -378,6 +378,7 @@ class Ocicle
       a.onclick = do (mark) => () =>
         @play false
         @fly_to mark.scale, mark.x, mark.y
+        false
       li.appendChild a
       ul.appendChild li
 
@@ -387,30 +388,29 @@ class Ocicle
         return mark
 
   edit: () ->
-    editlink = $ 'editlink'
+    editlink = $('editlink')
     if @editmode
-      editlink.innerText = 'save...'
+      editlink.style.background = 'red'
       @meta.save (success) ->
-        editlink.innerText = if success then 'save' else 'save (error)'
+        if success then editlink.style.background = 'inherit'
     else
       @editmode = true
-      editlink.innerText = 'save'
-      [body] = document.getElementsByTagName('body')
-      body.className = 'edit'
+      editlink.src = 'icons/save.png'
+      $('editstuff').style.display = 'block'
 
-      desc = $ 'desc'
+      desc = $('desc')
       desc.contentEditable = true
       desc.addEventListener 'input', () =>
         if @highlight_image
           @highlight_image.meta.desc = desc.innerText
 
-      shape = $ 'shapeselect'
+      shape = $('shapeselect')
       shape.addEventListener 'change', () =>
         if @highlight_image
           @highlight_image.meta.shape = parseInt shape.value
           @render()
 
-      editmark = $ 'editmark'
+      editmark = $('editmark')
       editmark.addEventListener 'change', () =>
         name = editmark.value
         editmark.value = ''
@@ -429,12 +429,12 @@ class Ocicle
           @meta.data.marks.push mark
         @setup_bookmarks()
 
-      gridsize = $ 'gridsize'
+      gridsize = $('gridsize')
       gridsize.addEventListener 'change', () =>
         @gridsize = parseInt gridsize.value
         @render()
 
-      delbutton = $ 'delete'
+      delbutton = $('delete')
       delbutton.addEventListener 'click', () =>
         return unless @highlight_image
         idx = @images.indexOf @highlight_image
@@ -759,7 +759,9 @@ class Ocicle
       if i.pw * @scale / @cw < 0.5 and i.ph * @scale / @ch < 0.5
         i = null
     # update description
-    set_text 'desc', i?.meta.desc or ''
+    desc = (i?.meta.desc or '').replace /\n$/, ''
+    set_text 'desc', desc
+    $('desc').style.lineHeight = if desc.search('\n') > 0 then 1.1 else 2.2
     if @editmode
       $('shapeselect').value = i?.meta.shape
     @highlight_image = i
@@ -771,7 +773,7 @@ class Ocicle
     set_text 'fps', @fps.toFixed 0
     @last_now = now
     #set_text 'zoom', (Math.log(@scale) / Math.LN2).toFixed 1
-    #set_text 'tiles', @tile_cache.puts
+    set_text 'tiles', @tile_cache.puts
 
   snap: (x) ->
     if @gridsize then @gridsize * Math.round x / @gridsize else x
@@ -816,6 +818,7 @@ class Ocicle
       y = i.py * @scale + @pan_y
       w = i.pw * @scale
       h = i.ph * @scale
+
       continue if rect_is_outside @c, x-fw, y-fw, w+3*fw, h+3*fw
 
       ctx.save()
@@ -879,13 +882,18 @@ class Ocicle
 
 
 on_resize = () ->
+  $('desc').style.width = \
+    $('bottombar').clientWidth - $('bottomstuff').clientWidth - 16
+  mb = $('mainbox')
+  mb.style.height = \
+    mb.parentElement.clientHeight - $('bottombar').clientHeight
   if window.ocicle then window.ocicle.on_resize()
 
 on_load = () ->
   on_resize()
   storage = new Storage '/data/'
   meta = new Metadata storage, (meta) ->
-    window.ocicle = new Ocicle $('c'), meta
+    window.ocicle = new Ocicle $('canvas'), meta
 
 window.addEventListener 'resize', on_resize, false
 window.addEventListener 'load', on_load, false
