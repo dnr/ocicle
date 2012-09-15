@@ -18,7 +18,10 @@ main = () ->
         res.writeHead 200, {'Content-Type': 'text/plain'}
         res.end 'true\n'
     else
-      send(req, req.url).root(__dirname).pipe(res)
+      ext = req.url.substr(-4)
+      cacheable = ext == '.jpg' or ext == '.png' or ext == '.ico'
+      age = if cacheable then 24*3600 else 0
+      send(req, req.url).root(__dirname).maxage(age*1000).pipe(res)
 
   server.listen 1337, '127.0.0.1'
   console.log 'Server running at http://127.0.0.1:1337/'
