@@ -15,6 +15,7 @@ CLICK_ZOOM_FACTOR = 2
 WHEEL_ZOOM_FACTOR = Math.pow(2, 1/5)
 SLIDE_MS = 500
 FLY_MS = 1500
+PLAY_HOLD_MS = 3000
 FRAME_WIDTH = 1
 TILE_CACHE_SIZE = 500
 FAKE_DELAY = 0 #+500
@@ -601,6 +602,16 @@ class Ocicle
       @center_around @images[idx]
     else
       @center_around @images[0]
+
+  play: () ->
+    if @playing
+      window.clearInterval @playing
+      @playing = null
+      $('play').src = 'icons/play.png'
+    else
+      @playing = window.setInterval (=> @nav 1), FLY_MS + PLAY_HOLD_MS
+      @nav 1
+      $('play').src = 'icons/pause.png'
 
   center_around: (i) ->
     return unless i

@@ -20,8 +20,20 @@
 				</div>
 				<div><a href='javascript:ocicle.edit()' id='editlink'>edit</a></div>
 				<div><a href='javascript:BigScreen.toggle()'>full screen</a></div>
-				<div><a href='javascript:ocicle.nav(-1)'>previous</a></div>
-				<div><a href='javascript:ocicle.nav(1)'>next</a></div>
+				<div class='nounder noedit'>
+					<a href='javascript:ocicle.nav(-1)'>
+						<img src='icons/prev.png' alt='previous'
+						width=32 height=32>
+					</a>
+					<a href='javascript:ocicle.play()'>
+						<img src='icons/play.png' alt='play' id='play'
+						width=32 height=32>
+					</a>
+					<a href='javascript:ocicle.nav(1)'>
+						<img src='icons/next.png' alt='next'
+						width=32 height=32>
+					</a>
+				</div>
 				<div class='edit'>
 					<label>
 						mark
