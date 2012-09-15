@@ -8,6 +8,10 @@
 #   extent of central vertical line
 # background: don't do loop, figure out appropriate coords.
 # think about how to integrate super-wide or 360 panos.
+# play:
+#   auto-stop on hitting last image
+#   pre-calculate tiles needed for path during pause, pre-fetch
+#   fix issues around hitting next/prev while flying
 
 DRAG_FACTOR = 2
 DRAG_THRESHOLD = 3
@@ -352,6 +356,7 @@ class Ocicle
 
   reset: () ->
     @stop_animation()
+    @play false
     @last_now = @fps = 0
     @images = (new DZImage dz for dz in @meta.data.images)
     @bkgd_image = new ImageLoader BKGD_IMAGE
@@ -370,7 +375,9 @@ class Ocicle
       a = document.createElement 'a'
       a.href = '#'
       a.innerText = mark.name
-      a.onclick = do (mark) => () => @fly_to mark.scale, mark.x, mark.y
+      a.onclick = do (mark) => () =>
+        @play false
+        @fly_to mark.scale, mark.x, mark.y
       li.appendChild a
       ul.appendChild li
 
@@ -488,6 +495,7 @@ class Ocicle
       if e.button == 0 or e.button == 1 or e.button == 2
         e.preventDefault()
         @stop_animation()
+        @play false
         @drag_state = 1
         @drag_screen_x = e.screenX
         @drag_screen_y = e.screenY
@@ -531,6 +539,7 @@ class Ocicle
     mousedown: (e) ->
       e.preventDefault()
       @stop_animation()
+      @play false
       @drag_screen_x = e.screenX
       @drag_screen_y = e.screenY
       [@drag_img, xa, ya] = @find_containing_image_client e.clientX, e.clientY
@@ -603,15 +612,25 @@ class Ocicle
     else
       @center_around @images[0]
 
-  play: () ->
-    if @playing
-      window.clearInterval @playing
-      @playing = null
-      $('play').src = 'icons/play.png'
-    else
+  next: () ->
+    @play false
+    @nav 1
+
+  prev: () ->
+    @play false
+    @nav -1
+
+  play: (action) ->
+    if action is undefined
+      action = not @playing
+    if action
       @playing = window.setInterval (=> @nav 1), FLY_MS + PLAY_HOLD_MS
       @nav 1
       $('play').src = 'icons/pause.png'
+    else
+      window.clearInterval @playing if @playing
+      @playing = null
+      $('play').src = 'icons/play.png'
 
   center_around: (i) ->
     return unless i
