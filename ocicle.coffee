@@ -6,7 +6,6 @@
 # think about how to integrate super-wide or 360 panos.
 # keyboard shortcuts.
 # play:
-#   auto-stop on hitting last image
 #   pre-calculate tiles needed for path during pause, pre-fetch
 #   fix issues around hitting next/prev while flying
 
@@ -180,7 +179,6 @@ class LruCache
     @map = {}
     @_has = @map.hasOwnProperty.bind @map
     @length = 0
-    @puts = 0
 
   _insert: (node) ->
     @map[node[0]] = node
@@ -207,7 +205,6 @@ class LruCache
       undefined
 
   put: (key, value) ->
-    @puts++
     if @_has key
       node = @map[key]
       node[1] = value
@@ -218,23 +215,35 @@ class LruCache
 
 
 class ImageLoader
+  requested = 0
+  done = 0
+
+  delay = (func) ->
+    () -> window.setTimeout func, FAKE_DELAY + 200 * Math.random()
+
   constructor: (src) ->
     @complete = false
     @cbs = []
     @dom = document.createElement 'img'
     @dom.src = src
-    @dom.addEventListener 'load', if FAKE_DELAY then @_delay_onload else @_onload
+    @dom.addEventListener 'load', if FAKE_DELAY then delay @_onload else @_onload
+    @dom.addEventListener 'error', if FAKE_DELAY then delay @_onerror else @_onerror
+    requested++
 
   add_cb: (cb) ->
     @cbs.push cb
 
-  _delay_onload: () =>
-    window.setTimeout @_onload, FAKE_DELAY + 200 * Math.random()
-
   _onload: () =>
+    done++
     @complete = true
     cb @ for cb in @cbs
     delete @cbs
+
+  _onerror: () =>
+    done++
+
+  @stats: () ->
+    '' + (requested - done) + '/' + requested
 
 
 class DZImage
@@ -499,6 +508,7 @@ class Ocicle
 
     mousewheel: (e) ->
       e.preventDefault()
+      @play false
       if e.wheelDelta
         factor = if e.wheelDelta > 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
       else
@@ -576,14 +586,20 @@ class Ocicle
 
     mousewheel: interaction_normal.mousewheel
 
+  # Fly to next/previous image.
+  # 1 for next, -1 for prev.
+  # Returns true if this is not the last image in this direction.
   nav: (dir) ->
     if @highlight_image
       idx = @images.indexOf @highlight_image
       idx += dir
-      return if idx < 0 or idx >= @images.length
-      @center_around @images[idx]
+      if idx >= 0 and idx < @images.length
+        @center_around @images[idx]
+      idx += dir
+      return idx >= 0 and idx < @images.length
     else
       @center_around @images[0]
+      return true
 
   next: () ->
     @play false
@@ -593,13 +609,16 @@ class Ocicle
     @play false
     @nav -1
 
+  # Starts or stops auto-play.
+  # True to start, false to stop, missing to toggle.
   play: (action) ->
     if action is undefined
       action = not @playing
     if action
-      @playing = window.setInterval (=> @nav 1), FLY_MS + PLAY_HOLD_MS
-      @nav 1
+      step = () => if not @nav 1 then @play false
+      @playing = window.setInterval step, FLY_MS + PLAY_HOLD_MS
       $('play').src = 'icons/pause.png'
+      step()
     else
       window.clearInterval @playing if @playing
       @playing = null
@@ -754,7 +773,7 @@ class Ocicle
     set_text 'fps', @fps.toFixed 0
     @last_now = now
     #set_text 'zoom', log2(@scale).toFixed 1
-    set_text 'tiles', @tile_cache.puts
+    set_text 'tiles', ImageLoader.stats()
 
   snap: (x) ->
     if @gridsize then @gridsize * Math.round x / @gridsize else x
@@ -871,6 +890,9 @@ on_resize = () ->
   if window.ocicle then window.ocicle.on_resize()
 
 on_load = () ->
+  # prefetch this so it's in the cache
+  new ImageLoader 'icons/pause.png'
+
   on_resize()
   storage = new Storage '/data/'
   meta = new Metadata storage, (meta) ->
