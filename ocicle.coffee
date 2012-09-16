@@ -1,13 +1,10 @@
 
 # TODO:
 # use more detailed scales when zooming out.
-# do more pre-fetching all around.
-# resize top and bottom bars based on font size.
-# tab or something to jump to "next" image.
 # change marks (and maybe more) to use different coords:
 #   extent of central vertical line
-# background: don't do loop, figure out appropriate coords.
 # think about how to integrate super-wide or 360 panos.
+# keyboard shortcuts.
 # play:
 #   auto-stop on hitting last image
 #   pre-calculate tiles needed for path during pause, pre-fetch
@@ -30,7 +27,6 @@ ZOOM_LIMIT_TARGET = 3.0
 UNZOOM_LIMIT = 1/10
 
 BKGD_SCALEFACTOR = 8
-BKGD_SCALES = (Math.pow(BKGD_SCALEFACTOR, scale) for scale in [-1..3])
 BKGD_IMAGE = 'bkgd/bk.jpg'
 
 # shapes:
@@ -80,33 +76,10 @@ clear_node = (node) ->
   while node.hasChildNodes()
     node.removeChild node.firstChild
 
-array_sum = (a) ->
-  t = 0
-  t += x for x in a
-  t
-
-weights_to_alphas = (weights) ->
-  total_weight = array_sum weights
-  cumulative_weight = 0
-  alphas = []
-  for w in weights
-    alphas.push if w then 1 - cumulative_weight / total_weight else 0
-    cumulative_weight += w
-  alphas
-
-calc_scale_alphas = (scale) ->
-  len = BKGD_SCALES.length
-  if scale < BKGD_SCALES[0]
-    weights = (0 for _ in BKGD_SCALES)
-    weights[0] = 1
-  else if scale > BKGD_SCALES[len-1]
-    weights = (0 for _ in BKGD_SCALES)
-    weights[len-1] = 1
-  else
-    weights = for s in BKGD_SCALES
-      ratio = Math.log(s / scale) / Math.log(BKGD_SCALEFACTOR)
-      Math.max 0, 1 - Math.pow(ratio, 2)
-  weights_to_alphas weights
+log = (x, b) ->
+  Math.log(x) / Math.log(b)
+log2 = (x) ->
+  Math.log(x) / Math.LN2
 
 # Fits a parabola to (0, y1), (1, y2), (_, y3)
 parabola = (y1, y2, y3) ->
@@ -287,7 +260,7 @@ class DZImage
     'tiles/' + @meta.src + '/' + level + '/' + x + '_' + y + '.jpg'
 
   find_level: (dim) ->
-    Math.ceil(Math.log(dim) / Math.LN2)
+    Math.ceil log2 dim
 
   clip_level: (level) ->
     Math.min(Math.max(level, @min_level), @max_level)
@@ -737,11 +710,19 @@ class Ocicle
     return unless @bkgd_image.complete
 
     img = @bkgd_image.dom
-    alphas = calc_scale_alphas @scale
-    for s in BKGD_SCALES
-      alpha = alphas.shift()
-      continue unless alpha
-      ctx.globalAlpha = alpha
+    r = Math.floor log @scale, BKGD_SCALEFACTOR
+
+    scales = for p in [0, 1]
+      Math.pow(BKGD_SCALEFACTOR, r + p)
+
+    weights = for s in scales
+      ratio = log s / @scale, BKGD_SCALEFACTOR
+      Math.max 0, 1 - Math.pow(ratio, 2)
+
+    alphas = [1, weights[1] / (weights[0] + weights[1])]
+
+    for s in scales
+      ctx.globalAlpha = alphas.shift()
       sz = img.naturalWidth * @scale / s
       sx = ((@pan_x % sz) + sz) % sz
       sy = ((@pan_y % sz) + sz) % sz
@@ -772,7 +753,7 @@ class Ocicle
     @fps = (1000 / ms + @fps * 9) / 10
     set_text 'fps', @fps.toFixed 0
     @last_now = now
-    #set_text 'zoom', (Math.log(@scale) / Math.LN2).toFixed 1
+    #set_text 'zoom', log2(@scale).toFixed 1
     set_text 'tiles', @tile_cache.puts
 
   snap: (x) ->
