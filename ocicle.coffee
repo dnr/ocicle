@@ -9,7 +9,6 @@
 #   fix issues around hitting next/prev while flying
 # fix sluggishness when flying across big waterfall.
 #   maybe use one level lower while animating?
-# on load, zoom in from really far away.
 # make frame widths a fraction of image size, not scale.
 # make nicer frames?
 
@@ -373,7 +372,7 @@ class View
 
 
 class Ocicle
-  constructor: (@c, @meta) ->
+  constructor: (@c, @meta, @bkgd_image) ->
     @editmode = false
 
     add_event = (events, method) =>
@@ -387,20 +386,14 @@ class Ocicle
     add_event ['mouseup', 'mouseout'], 'mouseup'
     add_event ['mousewheel', 'DOMMouseScroll'], 'mousewheel'
 
-    @reset()
-
-  reset: () ->
-    @stop_animation()
-    @play false
     @last_now = @fps = 0
+    @gridsize = parseInt $('gridsize').value
     @images = (new DZImage dz for dz in @meta.data.images)
-    @bkgd_image = new ImageLoader BKGD_IMAGE
     @setup_bookmarks()
     @tile_cache = new LruCache TILE_CACHE_SIZE
-    @view = new View 1, 0, 0
-    @scale_target = 1
-    @gridsize = parseInt $('gridsize').value
-    @render()
+    @setup_context()
+    @view = new View 1/10000, @cw2, @ch2
+    @slide_to (new View 1, 0, 0), FLY_MS, false
 
   setup_bookmarks: () ->
     ul = $('gotolist')
@@ -549,7 +542,7 @@ class Ocicle
           @do_zoom factor, e.clientX, e.clientY
         else if e.button == 1
           [i] = @find_containing_image_client e.clientX, e.clientY
-          coords = @center_around_coords i
+          coords = @center_around_image i
           @fly_to coords if coords
       @drag_state = 0
 
@@ -644,14 +637,14 @@ class Ocicle
 
     idx += dir
     if idx >= 0 and idx < @images.length
-      view1 = @center_around_coords @images[idx]
+      view1 = @center_around_image @images[idx]
       @fly_to view1 if view1
 
     # If we can go farther in this direction, calculate that path too
     # and prefetch tiles required for it.
     idx += dir
     if idx >= 0 and idx < @images.length
-      view2 = @center_around_coords @images[idx]
+      view2 = @center_around_image @images[idx]
       nextpath = compute_flying_path @cw, @ch, view1, view2
       @prefetch_path nextpath if nextpath
       return true
@@ -680,7 +673,7 @@ class Ocicle
       @playing = null
       $('play').src = PLAY_ICON
 
-  center_around_coords: (i) ->
+  center_around_image: (i) ->
     return unless i
     scale = Math.min (@c.width - CENTER_BORDER) / i.pw,
                      (@c.height - CENTER_BORDER) / i.ph
@@ -698,7 +691,7 @@ class Ocicle
     pan_y = center_y - @scale_target / @view.scale * (center_y - @view.pan_y)
     @slide_to new View @scale_target, pan_x, pan_y
 
-  slide_to: (end) ->
+  slide_to: (end, ms=SLIDE_MS, check_limit=true) ->
     @scale_target = end.scale
     start = @view.clone()
     update = (t) =>
@@ -706,21 +699,21 @@ class Ocicle
       @view.scale = start.scale * (1-t) + end.scale * t
       @view.pan_x = start.pan_x * (1-t) + end.pan_x * t
       @view.pan_y = start.pan_y * (1-t) + end.pan_y * t
-    @animate update, SLIDE_MS
+    @animate update, ms, check_limit
 
-  fly_to: (end) ->
+  fly_to: (end, ms=FLY_MS, check_limit=false) ->
     path = compute_flying_path(@cw, @ch, @view, end)
     if path
       @prefetch_path path
       update = (t) =>
         @view = path t
         @scale_target = @view.scale
-      @animate update, FLY_MS, false
+      @animate update, ms, check_limit
 
   stop_animation: () ->
     cancelFrame @request_id if @request_id
 
-  animate: (update, ms, check_limit=true) ->
+  animate: (update, ms, check_limit) ->
     @stop_animation()
     start = Date.now() - 5
     frame = () =>
@@ -930,11 +923,12 @@ on_resize = () ->
 on_load = () ->
   # prefetch this so it's in the cache
   new ImageLoader PAUSE_ICON
+  bkgd_image = new ImageLoader BKGD_IMAGE
 
   on_resize()
   storage = new Storage '/data/'
   meta = new Metadata storage, (meta) ->
-    window.ocicle = new Ocicle $('canvas'), meta
+    window.ocicle = new Ocicle $('canvas'), meta, bkgd_image
 
 window.addEventListener 'resize', on_resize, false
 window.addEventListener 'load', on_load, false
