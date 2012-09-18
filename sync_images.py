@@ -75,7 +75,7 @@ def AddToMeta(meta, attrs):
 	else:
 		attrs['px'] = random.uniform(0, 1000)
 		attrs['py'] = random.uniform(-500, -100)
-		attrs['pw'] = random.uniform(200, 300)
+		attrs['pw'] = random.uniform(50, 80)
 		attrs['shape'] = RECT
 		attrs['desc'] = ''
 		meta.append(attrs)
