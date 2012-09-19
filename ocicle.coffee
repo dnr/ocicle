@@ -9,7 +9,6 @@
 #   fix issues around hitting next/prev while flying
 # fix sluggishness when flying across big waterfall.
 #   maybe use one level lower while animating?
-# make frame widths a fraction of image size, not scale.
 # make nicer frames?
 
 DRAG_FACTOR = 2
@@ -19,7 +18,7 @@ WHEEL_ZOOM_FACTOR = Math.pow(2, 1/5)
 SLIDE_MS = 500
 FLY_MS = 1500
 PLAY_HOLD_MS = 3000
-FRAME_WIDTH = 1
+FRAME_WIDTH = 1/150
 TILE_CACHE_SIZE = 600
 FAKE_DELAY = 0 #+500
 CENTER_BORDER = 40
@@ -817,14 +816,20 @@ class Ocicle
     ctx.strokeStyle = 'hsl(210,5%,25%)'
     ctx.stroke()
 
-  draw_images: (ctx, fw, shadow, view, img_load_cb) ->
+  draw_images: (ctx, view, img_load_cb) ->
     max_ratio = 0
+
+    if ctx
+      ctx.strokeStyle = 'hsl(210,5%,5%)'
+      ctx.shadowColor = 'hsl(210,5%,15%)'
 
     for i in @images
       x = i.px * view.scale + view.pan_x
       y = i.py * view.scale + view.pan_y
       w = i.pw * view.scale
       h = i.ph * view.scale
+
+      fw = Math.sqrt(w * h) * FRAME_WIDTH
 
       continue if rect_is_outside @cw, @ch, x-fw, y-fw, w+3*fw, h+3*fw
 
@@ -833,8 +838,9 @@ class Ocicle
       if ctx
         ctx.save()
 
+        ctx.lineWidth = 2 * fw
         if i is @highlight_image
-          ctx.shadowOffsetX = ctx.shadowOffsetY = shadow
+          ctx.shadowOffsetX = ctx.shadowOffsetY = fw
 
         ctx.beginPath()
         switch i.meta.shape or RECT
@@ -858,6 +864,27 @@ class Ocicle
 
     max_ratio
 
+  draw_links: (ctx) ->
+    ctx.lineWidth = 3
+    ctx.strokeStyle = 'rgba(0,200,0,0.5)'
+    ctx.beginPath()
+    for i in @images
+      x = (i.px + i.pw/2) * @view.scale + @view.pan_x
+      y = (i.py + i.ph/2) * @view.scale + @view.pan_y
+      if i is @images[0]
+        ctx.moveTo x, y
+      else
+        ctx.lineTo x, y
+    ctx.stroke()
+
+  set_ratio_text: (max_ratio) ->
+    if max_ratio == 0
+      set_text 'ratio', ''
+    else if max_ratio < 1
+      set_text 'ratio', '1\u2236' + (1 / max_ratio).toFixed 1
+    else
+      set_text 'ratio', max_ratio.toFixed 1
+
   prefetch_path: (path) ->
     for t in [0..5]
       @draw_images null, 0, 0, path(t/5), null
@@ -869,34 +896,12 @@ class Ocicle
     @update_fps()
     @draw_grid ctx
 
-    ctx.lineWidth = Math.max 1, FRAME_WIDTH * @view.scale
-    ctx.strokeStyle = 'hsl(210,5%,5%)'
-    ctx.shadowColor = 'hsl(210,5%,15%)'
-    shadow = Math.max 1, FRAME_WIDTH * @view.scale / 2
-    fw = ctx.lineWidth / 2
+    max_ratio = @draw_images ctx, @view, @img_load_cb
 
-    max_ratio = @draw_images ctx, fw, shadow, @view, @img_load_cb
-
-    # draw links
     if @editmode
-      ctx.lineWidth = 3
-      ctx.strokeStyle = 'rgba(0,200,0,0.5)'
-      ctx.beginPath()
-      for i in @images
-        x = (i.px + i.pw/2) * @view.scale + @view.pan_x
-        y = (i.py + i.ph/2) * @view.scale + @view.pan_y
-        if i is @images[0]
-          ctx.moveTo x, y
-        else
-          ctx.lineTo x, y
-      ctx.stroke()
+      @draw_links ctx
 
-    if max_ratio == 0
-      set_text 'ratio', ''
-    else if max_ratio < 1
-      set_text 'ratio', '1\u2236' + (1 / max_ratio).toFixed 1
-    else
-      set_text 'ratio', max_ratio.toFixed 1
+    @set_ratio_text max_ratio
 
     @hit_limit = false
     if max_ratio > 0 and max_ratio < 1 / ZOOM_LIMIT_LIMIT
