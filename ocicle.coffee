@@ -710,7 +710,9 @@ class Ocicle
       @animate update, ms, check_limit
 
   stop_animation: () ->
-    cancelFrame @request_id if @request_id
+    if @request_id
+      cancelFrame @request_id
+      @request_id = null
 
   animate: (update, ms, check_limit) ->
     @stop_animation()
@@ -725,9 +727,6 @@ class Ocicle
       else
         @request_id = if t < 1 then requestFrame frame, @c
     frame()
-
-  on_resize: () ->
-    @render()
 
 
   setup_context: () ->
@@ -896,7 +895,7 @@ class Ocicle
     @update_fps()
     @draw_grid ctx
 
-    max_ratio = @draw_images ctx, @view, @img_load_cb
+    max_ratio = @draw_images ctx, @view, @redraw
 
     if @editmode
       @draw_links ctx
@@ -911,10 +910,9 @@ class Ocicle
 
     return
 
-  img_load_cb: () =>
-    # TODO: check if any pending and render then, not this timeout stuff
-    if @load_timeout_id then window.clearTimeout @load_timeout_id
-    @load_timeout_id = window.setTimeout (=>@render()), 50
+  redraw: () =>
+    unless @request_id
+      @request_id = requestFrame (=>@render())
 
 
 on_resize = () ->
@@ -923,7 +921,7 @@ on_resize = () ->
   mb = $('mainbox')
   mb.style.height = \
     mb.parentElement.clientHeight - $('bottombar').clientHeight
-  if window.ocicle then window.ocicle.on_resize()
+  if window.ocicle then window.ocicle.redraw()
 
 on_load = () ->
   # prefetch this so it's in the cache
