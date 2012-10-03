@@ -385,12 +385,15 @@ class Ocicle
     add_event ['mouseup', 'mouseout'], 'mouseup'
     add_event ['mousewheel', 'DOMMouseScroll'], 'mousewheel'
 
+    @gl = @setup_context()
+    return unless @gl
+
     @last_now = @fps = 0
     @gridsize = parseInt $('gridsize').value
     @images = (new DZImage dz for dz in @meta.data.images)
     @setup_bookmarks()
     @tile_cache = new LruCache TILE_CACHE_SIZE
-    @setup_context()
+    #@setup_context()
     @view = new View 1/10000, @cw2, @ch2
     @slide_to (new View 1, 0, 0), FLY_MS, false
 
@@ -737,9 +740,97 @@ class Ocicle
     @cw2 = @cw / 2
     @ch2 = @ch / 2
 
-    ctx = @c.getContext '2d'
-    ctx.clearRect 0, 0, @cw, @ch
-    ctx
+    @pano_img = new ImageLoader 'equirect.jpg'
+
+    #ctx = @c.getContext '2d'
+    #ctx.clearRect 0, 0, @cw, @ch
+    gl = @c.getContext('webgl') || @c.getContext('experimental-webgl') || @c.getContext('webkit-3d')
+    return unless gl
+
+    gl.clearColor(0.0, 0.0, 0.0, 1.0)                  # Set clear color to black, fully opaque
+    gl.enable(gl.DEPTH_TEST)                           # Enable depth testing
+    gl.depthFunc(gl.LEQUAL)                            # Near things obscure far things
+    gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT)  # Clear the color as well as the depth buffer.
+
+    make_shader = (tp, code) ->
+      sh = gl.createShader tp
+      gl.shaderSource sh, code
+      gl.compileShader sh
+      if gl.getShaderParameter(sh, gl.COMPILE_STATUS)
+        sh
+      else
+        alert("An error occurred compiling the shaders: " +
+          gl.getShaderInfoLog(sh))
+        null
+
+    vertex_code = '''
+      attribute vec3 aVertexPosition;
+      attribute vec2 aTexCoord;
+
+      uniform mat4 uMVMatrix;
+      uniform mat4 uPMatrix;
+
+      varying highp vec2 vTexCoord;
+
+      void main(void) {
+        gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+        vTexCoord = aTexCoord;
+      }
+    '''
+    frag_code = '''
+      varying highp vec2 vTexCoord;
+      uniform sampler2D uSampler;
+      void main(void) {
+        gl_FragColor = texture2D(uSampler, vec2(vTexCoord.s, vTexCoord.t));
+      }
+    '''
+    @shaderProgram = gl.createProgram()
+    gl.attachShader(@shaderProgram, make_shader gl.VERTEX_SHADER, vertex_code)
+    gl.attachShader(@shaderProgram, make_shader gl.FRAGMENT_SHADER, frag_code)
+    gl.linkProgram(@shaderProgram)
+
+    unless gl.getProgramParameter(@shaderProgram, gl.LINK_STATUS)
+      alert("Unable to initialize the shader program.")
+      return
+
+    gl.useProgram(@shaderProgram)
+
+    @vertexPositionAttribute = gl.getAttribLocation(@shaderProgram, "aVertexPosition")
+    gl.enableVertexAttribArray(@vertexPositionAttribute)
+
+    @textureCoordAttribute = gl.getAttribLocation(@shaderProgram, "aTexCoord")
+    gl.enableVertexAttribArray(@textureCoordAttribute)
+
+    @squareVerticesBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, @squareVerticesBuffer)
+    vertices = [
+      1.0,  1.0,  0.0,
+      -1.0, 1.0,  0.0,
+      1.0,  -1.0, 0.0,
+      -1.0, -1.0, 0.0
+    ]
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW)
+
+    @pano_tex = gl.createTexture()
+    @pano_img.add_cb () =>
+      gl.bindTexture(gl.TEXTURE_2D, @pano_tex)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, @pano_img.dom)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_NEAREST)
+      gl.generateMipmap(gl.TEXTURE_2D)
+      gl.bindTexture(gl.TEXTURE_2D, null)
+
+    tex_verts = [
+      0, 0
+      1, 0
+      0, 1
+      1, 1
+    ]
+    @tex_verts = gl.createBuffer()
+    gl.bindBuffer gl.ARRAY_BUFFER, @tex_verts
+    gl.bufferData gl.ARRAY_BUFFER, new Float32Array(tex_verts), gl.STATIC_DRAW
+
+    gl
 
   draw_background: (ctx) ->
     return unless @bkgd_image.complete
@@ -889,6 +980,33 @@ class Ocicle
       @draw_images null, 0, 0, path(t/5), null
 
   render: () ->
+    gl = @gl
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+
+    perspectiveMatrix = makePerspective(45, @cw/@ch, 0.1, 100.0)
+
+    mvm = Matrix.Translation($V([-0.0, 0.0, -6.0])).ensure4x4()
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, @squareVerticesBuffer)
+    gl.vertexAttribPointer(@vertexPositionAttribute, 3, gl.FLOAT, false, 0, 0)
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, @tex_verts)
+    gl.vertexAttribPointer(@textureCoordAttribute, 2, gl.FLOAT, false, 0, 0)
+
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, @pano_tex)
+    gl.uniform1i(gl.getUniformLocation(@shaderProgram, "uSampler"), 0)
+
+    pUniform = gl.getUniformLocation(@shaderProgram, "uPMatrix")
+    gl.uniformMatrix4fv(pUniform, false, new Float32Array(perspectiveMatrix.flatten()))
+
+    mvUniform = gl.getUniformLocation(@shaderProgram, "uMVMatrix")
+    gl.uniformMatrix4fv(mvUniform, false, new Float32Array(mvm.flatten()))
+
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+
+    return
+
     ctx = @setup_context()
     @draw_background ctx
     @update_highlight_image()
