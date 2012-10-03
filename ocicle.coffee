@@ -10,11 +10,14 @@
 # fix sluggishness when flying across big waterfall.
 #   maybe use one level lower while animating?
 # make nicer frames?
+# queue for downloading images
 
-DRAG_FACTOR = 2
+#DRAG_FACTOR = 2
+DRAG_FACTOR = 0.08
 DRAG_THRESHOLD = 3
 CLICK_ZOOM_FACTOR = 2
-WHEEL_ZOOM_FACTOR = Math.pow(2, 1/5)
+#WHEEL_ZOOM_FACTOR = Math.pow(2, 1/5)
+WHEEL_ZOOM_FACTOR = Math.pow(2, 1/10)
 SLIDE_MS = 500
 FLY_MS = 1500
 PLAY_HOLD_MS = 3000
@@ -519,8 +522,14 @@ class Ocicle
         @drag_state = 1
         @drag_screen_x = e.screenX
         @drag_screen_y = e.screenY
-        @drag_pan_x = @view.pan_x
-        @drag_pan_y = @view.pan_y
+        #@drag_pan_x = @view.pan_x
+        #@drag_pan_y = @view.pan_y
+        if false
+          @drag_pan_x = @t_mesh.rotation.x
+          @drag_pan_y = @t_mesh.rotation.y
+        else
+          @drag_lat = @t_lat
+          @drag_lon = @t_lon
 
     mousemove: (e) ->
       if @drag_state >= 1
@@ -529,9 +538,23 @@ class Ocicle
         if Math.abs(move_x) > DRAG_THRESHOLD or Math.abs(move_y) > DRAG_THRESHOLD
           @drag_state = 2
         if @drag_state >= 2
-          pan_x = @drag_pan_x + DRAG_FACTOR * move_x
-          pan_y = @drag_pan_y + DRAG_FACTOR * move_y
-          @slide_to new View @view.scale, pan_x, pan_y
+          #pan_x = @drag_pan_x + DRAG_FACTOR * move_x
+          #pan_y = @drag_pan_y + DRAG_FACTOR * move_y
+          #@slide_to new View @view.scale, pan_x, pan_y
+          if false
+            @t_mesh.rotation.x = @drag_pan_x - DRAG_FACTOR * move_y
+            @t_mesh.rotation.y = @drag_pan_y - DRAG_FACTOR * move_x
+          else
+            @t_lat = Math.max -89, Math.min 89, @drag_lat + DRAG_FACTOR * move_y
+            @t_lon = @drag_lon - DRAG_FACTOR * move_x
+            phi = ( 90 - @t_lat ) * Math.PI / 180
+            theta = @t_lon * Math.PI / 180
+            x = 50 * Math.sin(phi) * Math.cos(theta)
+            y = 50 * Math.cos(phi)
+            z = 50 * Math.sin(phi) * Math.sin(theta)
+            @t_camera.lookAt new THREE.Vector3 x, y, z
+
+          @render()
 
     mouseup: (e) ->
       if @drag_state == 1
@@ -552,7 +575,11 @@ class Ocicle
         factor = if e.wheelDelta > 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
       else
         factor = if e.detail < 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
-      @do_zoom factor, e.clientX, e.clientY
+      #@do_zoom factor, e.clientX, e.clientY
+      @t_fov /= factor
+      @t_fov = Math.max 4, Math.min 120, @t_fov
+      @t_camera.projectionMatrix.makePerspective @t_fov, @cw/@ch, 10, 100
+      @render()
 
   interaction_edit =
     # drag states:
@@ -737,9 +764,27 @@ class Ocicle
     @cw2 = @cw / 2
     @ch2 = @ch / 2
 
-    ctx = @c.getContext '2d'
-    ctx.clearRect 0, 0, @cw, @ch
-    ctx
+    @t_lat = 0
+    @t_lon = -90
+    @t_fov = 50
+
+    #@t_renderer = new THREE.CanvasRenderer {canvas: @c}
+    @t_renderer = new THREE.WebGLRenderer {canvas: @c}
+    @t_renderer.setSize @cw, @ch
+    @t_camera = new THREE.PerspectiveCamera @t_fov, @cw / @ch, 10, 100
+    @t_camera.target = new THREE.Vector3 0, 0, 0
+    @t_scene = new THREE.Scene()
+    geometry = new THREE.SphereGeometry 50, 60, 40
+    texture = THREE.ImageUtils.loadTexture 'pano3.jpg'
+    #texture.anisotropy = @t_renderer.getMaxAnisotropy()
+    material = new THREE.MeshBasicMaterial {map: texture}
+    @t_mesh = new THREE.Mesh geometry, material
+    @t_mesh.scale.x = -1
+    @t_scene.add @t_mesh
+
+    #ctx = @c.getContext '2d'
+    #ctx.clearRect 0, 0, @cw, @ch
+    #ctx
 
   draw_background: (ctx) ->
     return unless @bkgd_image.complete
@@ -889,6 +934,9 @@ class Ocicle
       @draw_images null, 0, 0, path(t/5), null
 
   render: () ->
+    @t_renderer.render @t_scene, @t_camera
+    return
+
     ctx = @setup_context()
     @draw_background ctx
     @update_highlight_image()
