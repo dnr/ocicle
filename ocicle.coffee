@@ -12,12 +12,12 @@
 # make nicer frames?
 # queue for downloading images
 
-#DRAG_FACTOR = 2
-DRAG_FACTOR = 0.08
+DRAG_FACTOR = 2
+DRAG_FACTOR_3D = 180
 DRAG_THRESHOLD = 3
 CLICK_ZOOM_FACTOR = 2
-#WHEEL_ZOOM_FACTOR = Math.pow(2, 1/5)
-WHEEL_ZOOM_FACTOR = Math.pow(2, 1/10)
+WHEEL_ZOOM_FACTOR = Math.pow(2, 1/5)
+WHEEL_ZOOM_FACTOR_3D = Math.pow(2, 1/10)
 SLIDE_MS = 500
 FLY_MS = 1500
 PLAY_HOLD_MS = 3000
@@ -372,6 +372,12 @@ class View
   clone: () ->
     new View @scale, @pan_x, @pan_y
 
+class View3
+  constructor: (@fov, @lat, @lon) ->
+
+  clone: () ->
+    new View3 @fov, @lat, @lon
+
 
 class Ocicle
   constructor: (@c, @meta, @bkgd_image) ->
@@ -524,12 +530,8 @@ class Ocicle
         @drag_screen_y = e.screenY
         #@drag_pan_x = @view.pan_x
         #@drag_pan_y = @view.pan_y
-        if false
-          @drag_pan_x = @t_mesh.rotation.x
-          @drag_pan_y = @t_mesh.rotation.y
-        else
-          @drag_lat = @t_lat
-          @drag_lon = @t_lon
+        @drag_lat = @view3.lat
+        @drag_lon = @view3.lon
 
     mousemove: (e) ->
       if @drag_state >= 1
@@ -541,20 +543,13 @@ class Ocicle
           #pan_x = @drag_pan_x + DRAG_FACTOR * move_x
           #pan_y = @drag_pan_y + DRAG_FACTOR * move_y
           #@slide_to new View @view.scale, pan_x, pan_y
-          if false
-            @t_mesh.rotation.x = @drag_pan_x - DRAG_FACTOR * move_y
-            @t_mesh.rotation.y = @drag_pan_y - DRAG_FACTOR * move_x
-          else
-            @t_lat = Math.max -89, Math.min 89, @drag_lat + DRAG_FACTOR * move_y
-            @t_lon = @drag_lon - DRAG_FACTOR * move_x
-            phi = ( 90 - @t_lat ) * Math.PI / 180
-            theta = @t_lon * Math.PI / 180
-            x = 50 * Math.sin(phi) * Math.cos(theta)
-            y = 50 * Math.cos(phi)
-            z = 50 * Math.sin(phi) * Math.sin(theta)
-            @t_camera.lookAt new THREE.Vector3 x, y, z
 
-          @render()
+          factor = DRAG_FACTOR_3D * Math.tan(@view3.fov / 2 * Math.PI / 180) / @cw2
+          lat = @drag_lat + factor * move_y
+          @view3_t.lat = Math.max -89, Math.min 89, lat
+          @view3_t.lon = @drag_lon - factor * move_x
+          @view3_t.fov = @view3.fov
+          @slide_to_3d @view3_t
 
     mouseup: (e) ->
       if @drag_state == 1
@@ -576,10 +571,7 @@ class Ocicle
       else
         factor = if e.detail < 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
       #@do_zoom factor, e.clientX, e.clientY
-      @t_fov /= factor
-      @t_fov = Math.max 4, Math.min 120, @t_fov
-      @t_camera.projectionMatrix.makePerspective @t_fov, @cw/@ch, 10, 100
-      @render()
+      @do_zoom_3d factor
 
   interaction_edit =
     # drag states:
@@ -717,6 +709,20 @@ class Ocicle
     pan_y = center_y - @scale_target / @view.scale * (center_y - @view.pan_y)
     @slide_to new View @scale_target, pan_x, pan_y
 
+  do_zoom_3d: (factor, client_x, client_y) ->
+    #bounds = @c.getBoundingClientRect()
+    #center_x = client_x - bounds.left
+    #center_y = client_y - bounds.top
+
+    fov = @fov_target / factor
+    @fov_target = Math.max 4, Math.min 120, fov
+    #pan_x = center_x - @scale_target / @view.scale * (center_x - @view.pan_x)
+    #pan_y = center_y - @scale_target / @view.scale * (center_y - @view.pan_y)
+    @view3_t.fov = @fov_target
+    @view3_t.lat = @view3.lat
+    @view3_t.lon = @view3.lon
+    @slide_to_3d @view3_t
+
   slide_to: (end, ms=SLIDE_MS, check_limit=true) ->
     @scale_target = end.scale
     start = @view.clone()
@@ -725,6 +731,16 @@ class Ocicle
       @view.scale = start.scale * (1-t) + end.scale * t
       @view.pan_x = start.pan_x * (1-t) + end.pan_x * t
       @view.pan_y = start.pan_y * (1-t) + end.pan_y * t
+    @animate update, ms, check_limit
+
+  slide_to_3d: (end, ms=SLIDE_MS, check_limit=true) ->
+    @fov_target = end.fov
+    start = @view3.clone()
+    update = (t) =>
+      t = Math.sqrt t  # start fast, end slow
+      @view3.fov = start.fov * (1-t) + end.fov * t
+      @view3.lat = start.lat * (1-t) + end.lat * t
+      @view3.lon = start.lon * (1-t) + end.lon * t
     @animate update, ms, check_limit
 
   fly_to: (end, ms=FLY_MS, check_limit=false) ->
@@ -764,48 +780,29 @@ class Ocicle
     @cw2 = @cw / 2
     @ch2 = @ch / 2
 
-    @t_lat = 0
-    @t_lon = -90
-    @t_fov = 50
+    @fov_target = 50
+    @view3 = new View3 @fov_target, 0, -90
+    @view3_t = new View3
 
-    #@t_renderer = new THREE.CanvasRenderer {canvas: @c}
-    @t_renderer = new THREE.WebGLRenderer {canvas: @c}
+    USE_WEBGL = true
+    if USE_WEBGL
+      @t_renderer = new THREE.WebGLRenderer {canvas: @c}
+      sub = 1
+    else
+      @t_renderer = new THREE.CanvasRenderer {canvas: @c}
+      sub = 16
     @t_renderer.setSize @cw, @ch
-    @t_camera = new THREE.PerspectiveCamera @t_fov, @cw / @ch, 1, 100000
-    @t_camera.target = new THREE.Vector3 0, 0, 0
+    @t_camera = new THREE.PerspectiveCamera @view3.fov, @cw/@ch, 1, 10000
+    @t_target = new THREE.Vector3 0, 0, 0
     @t_scene = new THREE.Scene()
 
-    method = 2
-    if method == 0
-      geometry = new THREE.SphereGeometry 100, 60, 40
-      urls = ('pano3_' + d + '.jpg' for d in 'rldufb')
-      texture = THREE.ImageUtils.loadTextureCube urls
-      texture.anisotropy = @t_renderer.getMaxAnisotropy()
-      texture.flipY = true
-      material = new THREE.MeshBasicMaterial {envMap: texture}
-      @t_mesh = new THREE.Mesh geometry, material
-      @t_mesh.scale.x = -1
-    else if method == 1
-      geometry = new THREE.CubeGeometry 100, 100, 100
-      urls = ('pano3_' + d + '.jpg' for d in 'lrdufb')
-      texture = THREE.ImageUtils.loadTextureCube urls
-      texture.anisotropy = @t_renderer.getMaxAnisotropy()
-      material = new THREE.MeshBasicMaterial {envMap: texture}
-      @t_mesh = new THREE.Mesh geometry, material
-      @t_mesh.scale.x = -1
-    else
-      urls = ('pano3_' + d + '.jpg' for d in 'rludfb')
-      mats = for u in urls
-        tex = THREE.ImageUtils.loadTexture u
-        tex.anisotropy = @t_renderer.getMaxAnisotropy()
-        mat = new THREE.MeshBasicMaterial {map: tex}
-        mat.overdraw = true
-        mat
-      r = 100
-      sub = 16
-      geometry = new THREE.CubeGeometry r, r, r, sub, sub, sub, mats
-      @t_mesh = new THREE.Mesh geometry, new THREE.MeshFaceMaterial()
-      @t_mesh.scale.x = -1
+    urls = ('pano3_' + d + '.jpg' for d in 'rludfb')
+    mats = for u in urls
+      tex = THREE.ImageUtils.loadTexture u
+      tex.anisotropy = @t_renderer.getMaxAnisotropy()
+      new THREE.MeshBasicMaterial {map: tex, side:THREE.BackSide, overdraw: true}
+    geometry = new THREE.CubeGeometry 100, 100, 100, sub, sub, sub, mats
+    @t_mesh = new THREE.Mesh geometry, new THREE.MeshFaceMaterial()
 
     @t_scene.add @t_mesh
 
@@ -857,6 +854,7 @@ class Ocicle
   update_fps: () ->
     now = Date.now()
     ms = now - @last_now
+    return if ms <= 0
     @fps = (1000 / ms + @fps * 9) / 10
     set_text 'fps', @fps.toFixed 0
     @last_now = now
@@ -961,7 +959,20 @@ class Ocicle
       @draw_images null, 0, 0, path(t/5), null
 
   render: () ->
+    @update_fps()
+
+    @t_camera.projectionMatrix.makePerspective @view3.fov, @cw/@ch, 1, 10000
+
+    phi = ( 90 - @view3.lat ) * Math.PI / 180
+    theta = @view3.lon * Math.PI / 180
+    t = @t_target
+    t.x = 50 * Math.sin(phi) * Math.cos(theta)
+    t.y = 50 * Math.cos(phi)
+    t.z = 50 * Math.sin(phi) * Math.sin(theta)
+    @t_camera.lookAt t
+
     @t_renderer.render @t_scene, @t_camera
+
     return
 
     ctx = @setup_context()
