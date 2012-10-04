@@ -771,15 +771,42 @@ class Ocicle
     #@t_renderer = new THREE.CanvasRenderer {canvas: @c}
     @t_renderer = new THREE.WebGLRenderer {canvas: @c}
     @t_renderer.setSize @cw, @ch
-    @t_camera = new THREE.PerspectiveCamera @t_fov, @cw / @ch, 10, 100
+    @t_camera = new THREE.PerspectiveCamera @t_fov, @cw / @ch, 1, 100000
     @t_camera.target = new THREE.Vector3 0, 0, 0
     @t_scene = new THREE.Scene()
-    geometry = new THREE.SphereGeometry 50, 60, 40
-    texture = THREE.ImageUtils.loadTexture 'pano3.jpg'
-    #texture.anisotropy = @t_renderer.getMaxAnisotropy()
-    material = new THREE.MeshBasicMaterial {map: texture}
-    @t_mesh = new THREE.Mesh geometry, material
-    @t_mesh.scale.x = -1
+
+    method = 2
+    if method == 0
+      geometry = new THREE.SphereGeometry 100, 60, 40
+      urls = ('pano3_' + d + '.jpg' for d in 'rldufb')
+      texture = THREE.ImageUtils.loadTextureCube urls
+      texture.anisotropy = @t_renderer.getMaxAnisotropy()
+      texture.flipY = true
+      material = new THREE.MeshBasicMaterial {envMap: texture}
+      @t_mesh = new THREE.Mesh geometry, material
+      @t_mesh.scale.x = -1
+    else if method == 1
+      geometry = new THREE.CubeGeometry 100, 100, 100
+      urls = ('pano3_' + d + '.jpg' for d in 'lrdufb')
+      texture = THREE.ImageUtils.loadTextureCube urls
+      texture.anisotropy = @t_renderer.getMaxAnisotropy()
+      material = new THREE.MeshBasicMaterial {envMap: texture}
+      @t_mesh = new THREE.Mesh geometry, material
+      @t_mesh.scale.x = -1
+    else
+      urls = ('pano3_' + d + '.jpg' for d in 'rludfb')
+      mats = for u in urls
+        tex = THREE.ImageUtils.loadTexture u
+        tex.anisotropy = @t_renderer.getMaxAnisotropy()
+        mat = new THREE.MeshBasicMaterial {map: tex}
+        mat.overdraw = true
+        mat
+      r = 100
+      sub = 16
+      geometry = new THREE.CubeGeometry r, r, r, sub, sub, sub, mats
+      @t_mesh = new THREE.Mesh geometry, new THREE.MeshFaceMaterial()
+      @t_mesh.scale.x = -1
+
     @t_scene.add @t_mesh
 
     #ctx = @c.getContext '2d'
