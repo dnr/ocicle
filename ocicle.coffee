@@ -173,6 +173,76 @@ compute_flying_path = (cw, ch, start, end) ->
     new View scale, pan_x, pan_y
 
 
+# Heavily adapted from three.js's CubeGeometry.
+# https://github.com/mrdoob/three.js/blob/master/src/extras/geometries/CubeGeometry.js
+DynCube = (size, split_level, tile_level, get_url, max_aniso) ->
+  THREE.Geometry.call this
+  scope = this
+  @materials = []
+
+  url_idx_map = {}
+  split_level = Math.max split_level, tile_level
+  grid = 1 << split_level
+  tile_div = 1 << (split_level - tile_level)
+  segment = size / grid
+  size_half = size / 2
+
+  build_plane = (u, v, w, udir, vdir, wdir, facecode) ->
+    offset = scope.vertices.length
+    for iy in [0..grid]
+      for ix in [0..grid]
+        vector = new THREE.Vector3()
+        vector[u] = (ix * segment - size_half) * udir
+        vector[v] = (iy * segment - size_half) * vdir
+        vector[w] = size_half * wdir
+        scope.vertices.push vector
+
+    for iy in [0...grid]
+      for ix in [0...grid]
+        a = ix + (grid + 1) * iy
+        b = ix + (grid + 1) * (iy + 1)
+        c = (ix + 1) + (grid + 1) * (iy + 1)
+        d = (ix + 1) + (grid + 1) * iy
+        face = new THREE.Face4(a + offset, b + offset, c + offset, d + offset)
+
+        tx = Math.floor ix / tile_div
+        ty = Math.floor iy / tile_div
+        itx = ix - tx * tile_div
+        ity = iy - ty * tile_div
+
+        url = get_url(tile_level, facecode, tx, ty)
+        idx = url_idx_map[url]
+        if idx is undefined
+          tex = THREE.ImageUtils.loadTexture(url)
+          tex.anisotropy = max_aniso
+          mat = new THREE.MeshBasicMaterial {map: tex, overdraw: true}
+          url_idx_map[url] = idx = scope.materials.length
+          scope.materials.push mat
+        face.materialIndex = idx
+        scope.faces.push face
+
+        scope.faceVertexUvs[0].push [
+          new THREE.UV(itx / tile_div, 1 - ity / tile_div)
+          new THREE.UV(itx / tile_div, 1 - (ity + 1) / tile_div)
+          new THREE.UV((itx + 1) / tile_div, 1 - (ity + 1) / tile_div)
+          new THREE.UV((itx + 1) / tile_div, 1 - ity / tile_div)
+        ]
+
+    null
+
+  build_plane 'z', 'y', 'x', -1, -1,  1, 'r'
+  build_plane 'z', 'y', 'x',  1, -1, -1, 'l'
+  build_plane 'x', 'z', 'y',  1,  1,  1, 'u'
+  build_plane 'x', 'z', 'y',  1, -1, -1, 'd'
+  build_plane 'x', 'y', 'z',  1, -1,  1, 'f'
+  build_plane 'x', 'y', 'z', -1, -1, -1, 'b'
+
+  @computeCentroids()
+  @mergeVertices()
+
+DynCube:: = Object.create(THREE.Geometry::)
+
+
 # storage interface:
 # get: key, (value) -> ...
 # set: key, value, (success) -> ...
@@ -402,7 +472,7 @@ class Ocicle
     @tile_cache = new LruCache TILE_CACHE_SIZE
 
     @fov_target = 50
-    @view3 = new View3 @fov_target, 0, -90
+    @view3 = new View3 @fov_target, 0, 90
     @view3_t = new View3
     @three_d = false
 
@@ -431,24 +501,27 @@ class Ocicle
       if FORCE_CANVAS_RENDERER then throw 'asdf'
       @t_renderer = new THREE.WebGLRenderer {canvas: @c3}
       set_text 'renderer_name', 'webgl'
-      sub = 1
+      split = 0
     catch _
       console.log "falling back to CanvasRenderer"
       @t_renderer = new THREE.CanvasRenderer {canvas: @c3}
       set_text 'renderer_name', 'sw'
-      sub = 16
+      # Always split into at least 16ths for the canvas renderer,
+      # to cover up affine mapping artifacts. 3 isn't enough, 5 is
+      # too slow, 4 works well.
+      split = 4
 
     @t_renderer.setSize @cw, @ch
     @t_camera = new THREE.PerspectiveCamera @view3.fov, @cw/@ch, 1, 10000
     @t_target = new THREE.Vector3 0, 0, 0
     @t_scene = new THREE.Scene()
 
-    urls = ('pano3_' + d + '.jpg' for d in 'rludfb')
-    mats = for u in urls
-      tex = THREE.ImageUtils.loadTexture u
-      tex.anisotropy = @t_renderer.getMaxAnisotropy()
-      new THREE.MeshBasicMaterial {map: tex, overdraw: true}
-    geometry = new THREE.CubeGeometry 100, 100, 100, sub, sub, sub, mats
+    get_url = (name, base=9) -> (level, face, ix, iy) ->
+      level = base + level
+      "tiles/#{name}/#{face}/#{level}/#{ix}_#{iy}.jpg"
+    pano = get_url('nativity_pano')
+    max_aniso = @t_renderer.getMaxAnisotropy()
+    geometry = new DynCube 128, split, 1, pano, max_aniso
     @t_mesh = new THREE.Mesh geometry, new THREE.MeshFaceMaterial()
     @t_mesh.scale.x = -1
 
