@@ -17,7 +17,6 @@ DRAG_FACTOR_3D = 180
 DRAG_THRESHOLD = 3
 CLICK_ZOOM_FACTOR = 2
 WHEEL_ZOOM_FACTOR = Math.pow(2, 1/5)
-WHEEL_ZOOM_FACTOR_3D = Math.pow(2, 1/10)
 SLIDE_MS = 500
 FLY_MS = 1500
 PLAY_HOLD_MS = 3000
@@ -29,6 +28,7 @@ DEBUG_BORDERS = false
 ZOOM_LIMIT_LIMIT = 3.3
 ZOOM_LIMIT_TARGET = 3.0
 UNZOOM_LIMIT = 1/10
+FORCE_CANVAS_RENDERER = false
 
 BKGD_SCALEFACTOR = 8
 BKGD_IMAGE = 'bkgd/bk.jpg'
@@ -380,7 +380,7 @@ class View3
 
 
 class Ocicle
-  constructor: (@c, @meta, @bkgd_image) ->
+  constructor: (@c2, @c3, @meta, @bkgd_image) ->
     @editmode = false
 
     add_event = (events, method) =>
@@ -388,7 +388,8 @@ class Ocicle
         interaction = if @editmode then interaction_edit else interaction_normal
         interaction[method].apply @, arguments
       for event in events
-        @c.addEventListener event, edit_switch, true
+        @c2.addEventListener event, edit_switch, true
+        @c3.addEventListener event, edit_switch, true
     add_event ['mousedown', 'contextmenu'], 'mousedown'
     add_event ['mousemove'], 'mousemove'
     add_event ['mouseup', 'mouseout'], 'mouseup'
@@ -399,9 +400,60 @@ class Ocicle
     @images = (new DZImage dz for dz in @meta.data.images)
     @setup_bookmarks()
     @tile_cache = new LruCache TILE_CACHE_SIZE
-    @setup_context()
+
+    @fov_target = 50
+    @view3 = new View3 @fov_target, 0, -90
+    @view3_t = new View3
+    @three_d = false
+
+    @setup_contexts()
+
     @view = new View 1/10000, @cw2, @ch2
+    @view_t = new View
+
     @slide_to (new View 1, 0, 0), FLY_MS, false
+
+
+  setup_contexts: () ->
+    @cw = @c2.parentElement.clientWidth
+    if @c2.width != @cw then @c2.width = @cw
+    if @c3.width != @cw then @c3.width = @cw
+    @ch = @c2.parentElement.clientHeight
+    if @c2.height != @ch then @c2.height = @ch
+    if @c3.height != @ch then @c3.height = @ch
+
+    @cw2 = @cw / 2
+    @ch2 = @ch / 2
+
+    @ctx2 = @c2.getContext '2d'
+
+    try
+      if FORCE_CANVAS_RENDERER then throw 'asdf'
+      @t_renderer = new THREE.WebGLRenderer {canvas: @c3}
+      set_text 'renderer_name', 'webgl'
+      sub = 1
+    catch _
+      console.log "falling back to CanvasRenderer"
+      @t_renderer = new THREE.CanvasRenderer {canvas: @c3}
+      set_text 'renderer_name', 'sw'
+      sub = 16
+
+    @t_renderer.setSize @cw, @ch
+    @t_camera = new THREE.PerspectiveCamera @view3.fov, @cw/@ch, 1, 10000
+    @t_target = new THREE.Vector3 0, 0, 0
+    @t_scene = new THREE.Scene()
+
+    urls = ('pano3_' + d + '.jpg' for d in 'rludfb')
+    mats = for u in urls
+      tex = THREE.ImageUtils.loadTexture u
+      tex.anisotropy = @t_renderer.getMaxAnisotropy()
+      new THREE.MeshBasicMaterial {map: tex, overdraw: true}
+    geometry = new THREE.CubeGeometry 100, 100, 100, sub, sub, sub, mats
+    @t_mesh = new THREE.Mesh geometry, new THREE.MeshFaceMaterial()
+    @t_mesh.scale.x = -1
+
+    @t_scene.add @t_mesh
+
 
   setup_bookmarks: () ->
     ul = $('gotolist')
@@ -444,7 +496,7 @@ class Ocicle
       shape.addEventListener 'change', () =>
         if @highlight_image
           @highlight_image.meta.shape = parseInt shape.value
-          @render()
+          @redraw()
 
       editmark = $('editmark')
       editmark.addEventListener 'change', () =>
@@ -461,7 +513,7 @@ class Ocicle
       gridsize = $('gridsize')
       gridsize.addEventListener 'change', () =>
         @gridsize = parseInt gridsize.value
-        @render()
+        @redraw()
 
       delbutton = $('delete')
       delbutton.addEventListener 'click', () =>
@@ -472,7 +524,7 @@ class Ocicle
           return console.log "couldn't find images: " + idx + ',' + midx
         @images.splice idx, 1
         @meta.data.images.splice midx, 1
-        @render()
+        @redraw()
 
       reorder = (pos) =>
         return unless @highlight_image
@@ -494,18 +546,20 @@ class Ocicle
         else if pos == 'down'
           @images.splice idx+1, 0, img
           @meta.data.images.splice idx+1, 0, mimg
-        @render()
+        @redraw()
 
       $('order_first').addEventListener 'click', () -> reorder 'first'
       $('order_last').addEventListener 'click', () -> reorder 'last'
       $('order_up').addEventListener 'click', () -> reorder 'up'
       $('order_down').addEventListener 'click', () -> reorder 'down'
 
-      @render()
+      @redraw()
 
   find_containing_image_client: (x, y) ->
-    bounds = @c.getBoundingClientRect()
-    @find_containing_image_canvas x - bounds.left, y - bounds.top
+    # We don't need to subtract getBoundingClientRect().left/top because
+    # we know the canvas is positioned against the top left corner of
+    # the window.
+    @find_containing_image_canvas x, y
 
   find_containing_image_canvas: (x, y) ->
     x = (x - @view.pan_x) / @view.scale
@@ -528,10 +582,8 @@ class Ocicle
         @drag_state = 1
         @drag_screen_x = e.screenX
         @drag_screen_y = e.screenY
-        #@drag_pan_x = @view.pan_x
-        #@drag_pan_y = @view.pan_y
-        @drag_lat = @view3.lat
-        @drag_lon = @view3.lon
+        @drag_view = @view.clone()
+        @drag_view3 = @view3.clone()
 
     mousemove: (e) ->
       if @drag_state >= 1
@@ -540,23 +592,28 @@ class Ocicle
         if Math.abs(move_x) > DRAG_THRESHOLD or Math.abs(move_y) > DRAG_THRESHOLD
           @drag_state = 2
         if @drag_state >= 2
-          #pan_x = @drag_pan_x + DRAG_FACTOR * move_x
-          #pan_y = @drag_pan_y + DRAG_FACTOR * move_y
-          #@slide_to new View @view.scale, pan_x, pan_y
-
-          factor = DRAG_FACTOR_3D * Math.tan(@view3.fov / 2 * Math.PI / 180) / @cw2
-          lat = @drag_lat + factor * move_y
-          @view3_t.lat = Math.max -89, Math.min 89, lat
-          @view3_t.lon = @drag_lon - factor * move_x
-          @view3_t.fov = @view3.fov
-          @slide_to_3d @view3_t
+          if @three_d
+            factor = DRAG_FACTOR_3D * Math.tan(@view3.fov / 2 * Math.PI / 180) / @cw2
+            lat = @drag_view3.lat + factor * move_y
+            @view3_t.lat = Math.max -89, Math.min 89, lat
+            @view3_t.lon = @drag_view3.lon - factor * move_x
+            @view3_t.fov = @view3.fov
+            @slide_to_3d @view3_t
+          else
+            @view_t.pan_x = @drag_view.pan_x + DRAG_FACTOR * move_x
+            @view_t.pan_y = @drag_view.pan_y + DRAG_FACTOR * move_y
+            @view_t.scale = @view.scale
+            @slide_to @view_t
 
     mouseup: (e) ->
       if @drag_state == 1
         e.preventDefault()
         if e.button == 0 or e.button == 2
           factor = if e.button == 0 then CLICK_ZOOM_FACTOR else 1/CLICK_ZOOM_FACTOR
-          @do_zoom factor, e.clientX, e.clientY
+          if @three_d
+            @do_zoom_3d factor, e.clientX, e.clientY
+          else
+            @do_zoom factor, e.clientX, e.clientY
         else if e.button == 1
           [i] = @find_containing_image_client e.clientX, e.clientY
           coords = @center_around_image i
@@ -570,8 +627,10 @@ class Ocicle
         factor = if e.wheelDelta > 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
       else
         factor = if e.detail < 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
-      #@do_zoom factor, e.clientX, e.clientY
-      @do_zoom_3d factor
+      if @three_d
+        @do_zoom_3d factor, e.clientX, e.clientY
+      else
+        @do_zoom factor, e.clientX, e.clientY
 
   interaction_edit =
     # drag states:
@@ -637,7 +696,7 @@ class Ocicle
           ].sort (a, b) -> a[2] - b[2]
           @drag_img.move pts[0][0], pts[0][1]
 
-      @render()
+      @redraw()
 
     mouseup: (e) ->
       @drag_state = 0
@@ -693,31 +752,25 @@ class Ocicle
 
   center_around_image: (i) ->
     return unless i
-    scale = Math.min (@c.width - CENTER_BORDER) / i.pw,
-                     (@c.height - CENTER_BORDER) / i.ph
+    scale = Math.min (@cw - CENTER_BORDER) / i.pw,
+                     (@ch - CENTER_BORDER) / i.ph
     pan_x = @cw2 - (i.px + i.pw / 2) * scale
     pan_y = @ch2 - (i.py + i.ph / 2) * scale
     new View scale, pan_x, pan_y
 
   do_zoom: (factor, client_x, client_y) ->
-    bounds = @c.getBoundingClientRect()
-    center_x = client_x - bounds.left
-    center_y = client_y - bounds.top
-
+    # We don't need to subtract getBoundingClientRect().left/top because
+    # we know the canvas is positioned against the top left corner of
+    # the window.
     @scale_target *= factor
-    pan_x = center_x - @scale_target / @view.scale * (center_x - @view.pan_x)
-    pan_y = center_y - @scale_target / @view.scale * (center_y - @view.pan_y)
+    pan_x = client_x - @scale_target / @view.scale * (client_x - @view.pan_x)
+    pan_y = client_y - @scale_target / @view.scale * (client_y - @view.pan_y)
     @slide_to new View @scale_target, pan_x, pan_y
 
   do_zoom_3d: (factor, client_x, client_y) ->
-    #bounds = @c.getBoundingClientRect()
-    #center_x = client_x - bounds.left
-    #center_y = client_y - bounds.top
-
+    # TODO: use clientxy
     fov = @fov_target / factor
     @fov_target = Math.max 4, Math.min 120, fov
-    #pan_x = center_x - @scale_target / @view.scale * (center_x - @view.pan_x)
-    #pan_y = center_y - @scale_target / @view.scale * (center_y - @view.pan_y)
     @view3_t.fov = @fov_target
     @view3_t.lat = @view3.lat
     @view3_t.lon = @view3.lon
@@ -766,53 +819,24 @@ class Ocicle
       @render()
       if check_limit and @hit_limit
         @scale_target = @view.scale
-        @do_zoom @hit_limit, @c.width/2, @c.height/2
+        @do_zoom @hit_limit, @cw2, @ch2
       else
-        @request_id = if t < 1 then requestFrame frame, @c
+        @request_id = if t < 1 then requestFrame frame, @c2
     frame()
 
 
-  setup_context: () ->
-    @cw = @c.parentElement.clientWidth
-    if @c.width != @cw then @c.width = @cw
-    @ch = @c.parentElement.clientHeight
-    if @c.height != @ch then @c.height = @ch
-    @cw2 = @cw / 2
-    @ch2 = @ch / 2
+  set_three_d: (val) ->
+    if val is undefined then val = not @three_d
+    @three_d = val
+    @c2.style.display = if @three_d then 'none' else 'block'
+    @c3.style.display = if @three_d then 'block' else 'none'
+    @redraw()
 
-    @fov_target = 50
-    @view3 = new View3 @fov_target, 0, -90
-    @view3_t = new View3
 
-    USE_WEBGL = true
-    if USE_WEBGL
-      @t_renderer = new THREE.WebGLRenderer {canvas: @c}
-      sub = 1
-    else
-      @t_renderer = new THREE.CanvasRenderer {canvas: @c}
-      sub = 16
-    @t_renderer.setSize @cw, @ch
-    @t_camera = new THREE.PerspectiveCamera @view3.fov, @cw/@ch, 1, 10000
-    @t_target = new THREE.Vector3 0, 0, 0
-    @t_scene = new THREE.Scene()
-
-    urls = ('pano3_' + d + '.jpg' for d in 'rludfb')
-    mats = for u in urls
-      tex = THREE.ImageUtils.loadTexture u
-      tex.anisotropy = @t_renderer.getMaxAnisotropy()
-      new THREE.MeshBasicMaterial {map: tex, side:THREE.BackSide, overdraw: true}
-    geometry = new THREE.CubeGeometry 100, 100, 100, sub, sub, sub, mats
-    @t_mesh = new THREE.Mesh geometry, new THREE.MeshFaceMaterial()
-
-    @t_scene.add @t_mesh
-
-    #ctx = @c.getContext '2d'
-    #ctx.clearRect 0, 0, @cw, @ch
-    #ctx
-
-  draw_background: (ctx) ->
+  draw_background: () ->
     return unless @bkgd_image.complete
 
+    ctx = @ctx2
     img = @bkgd_image.dom
     r = Math.floor log @view.scale, BKGD_SCALEFACTOR
 
@@ -860,12 +884,13 @@ class Ocicle
     @last_now = now
     #set_text 'zoom', log2(@view.scale).toFixed 1
     set_text 'tiles', ImageLoader.stats()
+    set_text 'fov', @view3.fov.toFixed 0
 
   snap: (x) ->
     if @gridsize then @gridsize * Math.round x / @gridsize else x
 
-  draw_grid: (ctx) ->
-    return unless @gridsize and @editmode
+  draw_grid: () ->
+    ctx = @ctx2
     ctx.beginPath()
     x = @snap -@view.pan_x / @view.scale
     y = @snap -@view.pan_y / @view.scale
@@ -885,10 +910,11 @@ class Ocicle
     ctx.strokeStyle = 'hsl(210,5%,25%)'
     ctx.stroke()
 
-  draw_images: (ctx, view, img_load_cb) ->
+  draw_images: (really, view, img_load_cb) ->
     max_ratio = 0
+    ctx = @ctx2
 
-    if ctx
+    if really
       ctx.strokeStyle = 'hsl(210,5%,5%)'
       ctx.shadowColor = 'hsl(210,5%,15%)'
 
@@ -904,7 +930,7 @@ class Ocicle
 
       max_ratio = Math.max max_ratio, i.w / w
 
-      if ctx
+      if really
         ctx.save()
 
         ctx.lineWidth = 2 * fw
@@ -926,14 +952,16 @@ class Ocicle
 
         ctx.shadowOffsetX = ctx.shadowOffsetY = 0
 
-      i.render_onto_ctx ctx, @tile_cache, x, y, w, h, img_load_cb
+      draw_ctx = if really then ctx else null
+      i.render_onto_ctx draw_ctx, @tile_cache, x, y, w, h, img_load_cb
 
-      if ctx
+      if really
         ctx.restore()
 
     max_ratio
 
-  draw_links: (ctx) ->
+  draw_links: () ->
+    ctx = @ctx2
     ctx.lineWidth = 3
     ctx.strokeStyle = 'rgba(0,200,0,0.5)'
     ctx.beginPath()
@@ -956,49 +984,53 @@ class Ocicle
 
   prefetch_path: (path) ->
     for t in [0..5]
-      @draw_images null, 0, 0, path(t/5), null
+      @draw_images false, path(t/5), null
 
   render: () ->
+    @request_id = null
     @update_fps()
 
-    @t_camera.projectionMatrix.makePerspective @view3.fov, @cw/@ch, 1, 10000
+    if @three_d
+      @t_camera.projectionMatrix.makePerspective @view3.fov, @cw/@ch, 1, 10000
 
-    phi = ( 90 - @view3.lat ) * Math.PI / 180
-    theta = @view3.lon * Math.PI / 180
-    t = @t_target
-    t.x = 50 * Math.sin(phi) * Math.cos(theta)
-    t.y = 50 * Math.cos(phi)
-    t.z = 50 * Math.sin(phi) * Math.sin(theta)
-    @t_camera.lookAt t
+      phi = ( 90 - @view3.lat ) * Math.PI / 180
+      theta = @view3.lon * Math.PI / 180
+      t = @t_target
+      t.x = 50 * Math.sin(phi) * Math.cos(theta)
+      t.y = 50 * Math.cos(phi)
+      t.z = 50 * Math.sin(phi) * Math.sin(theta)
+      @t_camera.lookAt t
 
-    @t_renderer.render @t_scene, @t_camera
+      @t_renderer.render @t_scene, @t_camera
 
-    return
+    else
+      #@ctx2.clearRect 0, 0, @cw, @ch
+      @draw_background()
+      @update_highlight_image()
+      if @editmode and @gridsize then @draw_grid()
 
-    ctx = @setup_context()
-    @draw_background ctx
-    @update_highlight_image()
-    @update_fps()
-    @draw_grid ctx
+      max_ratio = @draw_images true, @view, @redraw
 
-    max_ratio = @draw_images ctx, @view, @redraw
+      if @editmode
+        @draw_links()
 
-    if @editmode
-      @draw_links ctx
+      @set_ratio_text max_ratio
 
-    @set_ratio_text max_ratio
-
-    @hit_limit = false
-    if max_ratio > 0 and max_ratio < 1 / ZOOM_LIMIT_LIMIT
-      @hit_limit = max_ratio * ZOOM_LIMIT_TARGET
-    else if @view.scale < UNZOOM_LIMIT
-      @hit_limit = 1.05
+      @hit_limit = false
+      if max_ratio > 0 and max_ratio < 1 / ZOOM_LIMIT_LIMIT
+        @hit_limit = max_ratio * ZOOM_LIMIT_TARGET
+      else if @view.scale < UNZOOM_LIMIT
+        @hit_limit = 1.05
 
     return
 
   redraw: () =>
     unless @request_id
       @request_id = requestFrame (=>@render())
+
+  resize: () ->
+    @setup_contexts()
+    @redraw()
 
 
 on_resize = () ->
@@ -1007,7 +1039,7 @@ on_resize = () ->
   mb = $('mainbox')
   mb.style.height = \
     mb.parentElement.clientHeight - $('bottombar').clientHeight
-  if window.ocicle then window.ocicle.redraw()
+  if window.ocicle then window.ocicle.resize()
 
 on_load = () ->
   # prefetch this so it's in the cache
@@ -1017,7 +1049,7 @@ on_load = () ->
   on_resize()
   storage = new Storage '/data/'
   meta = new Metadata storage, (meta) ->
-    window.ocicle = new Ocicle $('canvas'), meta, bkgd_image
+    window.ocicle = new Ocicle $('c2'), $('c3'), meta, bkgd_image
 
 window.addEventListener 'resize', on_resize, false
 window.addEventListener 'load', on_load, false

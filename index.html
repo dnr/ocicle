@@ -44,7 +44,8 @@
 			</div>
 		</div>
 		<div id='mainbox'>
-			<canvas id='canvas'></canvas>
+			<canvas id='c2'></canvas>
+			<canvas id='c3' style='display:none'></canvas>
 		</div>
 		<div id='bottombar'>
 			<div id='bottomstuff'>
@@ -69,6 +70,7 @@
 				<a href='javascript:ocicle.edit()'><img
 					src='icons/pencil.png' alt='edit'
 					width=32 height=32 id='editlink'></a>
+				<a href='javascript:ocicle.set_three_d()'>3d</a>
 			</div>
 			<div id='desc'></div>
 		</div>
@@ -76,6 +78,8 @@
 			<div>fps: <span id='fps'></span></div>
 			<div>ratio: <span id='ratio'></span></div>
 			<div>tiles: <span id='tiles'></span></div>
+			<div>3d: <span id='renderer_name'></span></div>
+			<div>fov: <span id='fov'></span></div>
 		</div>
 	</body>
 </html>
