@@ -11,6 +11,11 @@
 #   maybe use one level lower while animating?
 # make nicer frames?
 # queue for downloading images
+#
+# 3d:
+# change level as zoom changes
+# load tiles on-demand
+# build customized three.js
 
 DRAG_FACTOR = 2
 DRAG_FACTOR_3D = 180
@@ -173,6 +178,17 @@ compute_flying_path = (cw, ch, start, end) ->
     new View scale, pan_x, pan_y
 
 
+make_material = (url, max_aniso) ->
+  img = new ImageLoader url
+  tex = new THREE.Texture img.dom
+  tex.anisotropy = max_aniso
+  tex.minFilter = THREE.LinearFilter
+  tex.generateMipmaps = false
+  img.add_cb () ->
+    tex.needsUpdate = true
+  new THREE.MeshBasicMaterial {map: tex, overdraw: true}
+
+
 # Heavily adapted from three.js's CubeGeometry.
 # https://github.com/mrdoob/three.js/blob/master/src/extras/geometries/CubeGeometry.js
 DynCube = (size, split_level, tile_level, get_url, max_aniso) ->
@@ -213,11 +229,8 @@ DynCube = (size, split_level, tile_level, get_url, max_aniso) ->
         url = get_url(tile_level, facecode, tx, ty)
         idx = url_idx_map[url]
         if idx is undefined
-          tex = THREE.ImageUtils.loadTexture(url)
-          tex.anisotropy = max_aniso
-          mat = new THREE.MeshBasicMaterial {map: tex, overdraw: true}
           url_idx_map[url] = idx = scope.materials.length
-          scope.materials.push mat
+          scope.materials.push make_material url, max_aniso
         face.materialIndex = idx
         scope.faces.push face
 
@@ -338,7 +351,7 @@ class ImageLoader
   constructor: (src) ->
     @complete = false
     @cbs = []
-    @dom = document.createElement 'img'
+    @dom = new Image()
     @dom.src = src
     @dom.addEventListener 'load', if FAKE_DELAY then delay @_onload else @_onload
     @dom.addEventListener 'error', if FAKE_DELAY then delay @_onerror else @_onerror
