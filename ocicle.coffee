@@ -196,85 +196,81 @@ is_off_screen = (e) ->
   Math.max(y1, y2, y3, y4) < -1
 
 
-make_material = (url, max_aniso, redraw) ->
-  tex = new THREE.Texture
-  tex.anisotropy = max_aniso
-  tex.minFilter = THREE.LinearFilter
-  tex.generateMipmaps = false
-  cb = (img) ->
-    tex.image = img.dom
-    tex.needsUpdate = true
-    redraw()
-  img = new ImageLoader url, cb, false
-  tex._ocicle_loader = img
-  new THREE.MeshBasicMaterial {map: tex, overdraw: true}
-
-
 # Heavily adapted from three.js's CubeGeometry.
 # https://github.com/mrdoob/three.js/blob/master/src/extras/geometries/CubeGeometry.js
-DynCube = (size, split_level, tile_level, get_url, max_aniso, redraw) ->
-  THREE.Geometry.call this
-  scope = this
-  @materials = []
+class DynCube extends THREE.Geometry
+  make_material = (url, max_aniso, redraw) ->
+    tex = new THREE.Texture
+    tex.anisotropy = max_aniso
+    tex.minFilter = THREE.LinearFilter
+    tex.generateMipmaps = false
+    cb = (img) ->
+      tex.image = img.dom
+      tex.needsUpdate = true
+      redraw()
+    img = new ImageLoader url, cb, false
+    tex._ocicle_loader = img
+    new THREE.MeshBasicMaterial {map: tex, overdraw: true}
 
-  url_idx_map = {}
-  split_level = Math.max split_level, tile_level
-  grid = 1 << split_level
-  tile_div = 1 << (split_level - tile_level)
-  segment = size / grid
-  size_half = size / 2
+  constructor: (size, split_level, tile_level, get_url, max_aniso, redraw) ->
+    super()
 
-  build_plane = (u, v, w, udir, vdir, wdir, facecode) ->
-    offset = scope.vertices.length
-    for iy in [0..grid]
-      for ix in [0..grid]
-        vector = new THREE.Vector3()
-        vector[u] = (ix * segment - size_half) * udir
-        vector[v] = (iy * segment - size_half) * vdir
-        vector[w] = size_half * wdir
-        scope.vertices.push vector
+    url_idx_map = {}
+    split_level = Math.max split_level, tile_level
+    grid = 1 << split_level
+    tile_div = 1 << (split_level - tile_level)
+    segment = size / grid
+    size_half = size / 2
 
-    for iy in [0...grid]
-      for ix in [0...grid]
-        a = ix + (grid + 1) * iy
-        b = ix + (grid + 1) * (iy + 1)
-        c = (ix + 1) + (grid + 1) * (iy + 1)
-        d = (ix + 1) + (grid + 1) * iy
-        face = new THREE.Face4(a + offset, b + offset, c + offset, d + offset)
+    build_plane = (u, v, w, udir, vdir, wdir, facecode) =>
+      offset = @vertices.length
+      for iy in [0..grid]
+        for ix in [0..grid]
+          vector = new THREE.Vector3()
+          vector[u] = (ix * segment - size_half) * udir
+          vector[v] = (iy * segment - size_half) * vdir
+          vector[w] = size_half * wdir
+          @vertices.push vector
 
-        tx = Math.floor ix / tile_div
-        ty = Math.floor iy / tile_div
-        itx = ix - tx * tile_div
-        ity = iy - ty * tile_div
+      for iy in [0...grid]
+        for ix in [0...grid]
+          a = ix + (grid + 1) * iy
+          b = ix + (grid + 1) * (iy + 1)
+          c = (ix + 1) + (grid + 1) * (iy + 1)
+          d = (ix + 1) + (grid + 1) * iy
+          face = new THREE.Face4(a + offset, b + offset, c + offset, d + offset)
 
-        url = get_url(tile_level, facecode, tx, ty)
-        idx = url_idx_map[url]
-        if idx is undefined
-          url_idx_map[url] = idx = scope.materials.length
-          scope.materials.push make_material url, max_aniso, redraw
-        face.materialIndex = idx
-        scope.faces.push face
+          tx = Math.floor ix / tile_div
+          ty = Math.floor iy / tile_div
+          itx = ix - tx * tile_div
+          ity = iy - ty * tile_div
 
-        scope.faceVertexUvs[0].push [
-          new THREE.UV(itx / tile_div, 1 - ity / tile_div)
-          new THREE.UV(itx / tile_div, 1 - (ity + 1) / tile_div)
-          new THREE.UV((itx + 1) / tile_div, 1 - (ity + 1) / tile_div)
-          new THREE.UV((itx + 1) / tile_div, 1 - ity / tile_div)
-        ]
+          url = get_url(tile_level, facecode, tx, ty)
+          idx = url_idx_map[url]
+          if idx is undefined
+            url_idx_map[url] = idx = @materials.length
+            @materials.push make_material url, max_aniso, redraw
+          face.materialIndex = idx
+          @faces.push face
 
-    null
+          @faceVertexUvs[0].push [
+            new THREE.UV(itx / tile_div, 1 - ity / tile_div)
+            new THREE.UV(itx / tile_div, 1 - (ity + 1) / tile_div)
+            new THREE.UV((itx + 1) / tile_div, 1 - (ity + 1) / tile_div)
+            new THREE.UV((itx + 1) / tile_div, 1 - ity / tile_div)
+          ]
 
-  build_plane 'z', 'y', 'x', -1, -1,  1, 'r'
-  build_plane 'z', 'y', 'x',  1, -1, -1, 'l'
-  build_plane 'x', 'z', 'y',  1,  1,  1, 'u'
-  build_plane 'x', 'z', 'y',  1, -1, -1, 'd'
-  build_plane 'x', 'y', 'z',  1, -1,  1, 'f'
-  build_plane 'x', 'y', 'z', -1, -1, -1, 'b'
+      null
 
-  @computeCentroids()
-  @mergeVertices()
+    build_plane 'z', 'y', 'x', -1, -1,  1, 'r'
+    build_plane 'z', 'y', 'x',  1, -1, -1, 'l'
+    build_plane 'x', 'z', 'y',  1,  1,  1, 'u'
+    build_plane 'x', 'z', 'y',  1, -1, -1, 'd'
+    build_plane 'x', 'y', 'z',  1, -1,  1, 'f'
+    build_plane 'x', 'y', 'z', -1, -1, -1, 'b'
 
-DynCube:: = Object.create(THREE.Geometry::)
+    @computeCentroids()
+    @mergeVertices()
 
 
 # storage interface:
