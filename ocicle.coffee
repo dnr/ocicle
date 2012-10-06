@@ -16,6 +16,7 @@
 # change level as zoom changes
 # load tiles through tilecache
 # drop some tiles when no longer on screen
+# compressed textures
 # build customized three.js
 
 DRAG_FACTOR = 2
@@ -202,6 +203,8 @@ class DynCube extends THREE.Geometry
   make_material = (url, max_aniso, redraw) ->
     tex = new THREE.Texture
     tex.anisotropy = max_aniso
+    # We effectively do our own mipmapping, so disable this to save some
+    # memory and time.
     tex.minFilter = THREE.LinearFilter
     tex.generateMipmaps = false
     cb = (img) ->
@@ -212,21 +215,30 @@ class DynCube extends THREE.Geometry
     tex._ocicle_loader = img
     new THREE.MeshBasicMaterial {map: tex, overdraw: true}
 
-  constructor: (size, split_level, tile_level, get_url, max_aniso, redraw) ->
+  constructor: (size, @tile_level_max, get_url, max_aniso, redraw) ->
     super()
 
-    url_idx_map = {}
-    split_level = Math.max split_level, tile_level
-    grid = 1 << split_level
-    tile_div = 1 << (split_level - tile_level)
+    # Always split into at least 16ths for the canvas renderer,
+    # to cover up affine mapping artifacts. 3 isn't enough, 5 is
+    # too slow, 4 works well.
+    @split_level = Math.max 4, @tile_level_max
+
+    grid = 1 << @split_level
     segment = size / grid
     size_half = size / 2
 
-    build_plane = (u, v, w, udir, vdir, wdir, facecode) =>
+    for [u, v, w, udir, vdir, wdir] in [
+      ['z', 'y', 'x', -1, -1,  1]  # r
+      ['z', 'y', 'x',  1, -1, -1]  # l
+      ['x', 'z', 'y',  1,  1,  1]  # u
+      ['x', 'z', 'y',  1, -1, -1]  # d
+      ['x', 'y', 'z',  1, -1,  1]  # f
+      ['x', 'y', 'z', -1, -1, -1]  # b
+    ]
       offset = @vertices.length
       for iy in [0..grid]
         for ix in [0..grid]
-          vector = new THREE.Vector3()
+          vector = new THREE.Vector3
           vector[u] = (ix * segment - size_half) * udir
           vector[v] = (iy * segment - size_half) * vdir
           vector[w] = size_half * wdir
@@ -238,39 +250,59 @@ class DynCube extends THREE.Geometry
           b = ix + (grid + 1) * (iy + 1)
           c = (ix + 1) + (grid + 1) * (iy + 1)
           d = (ix + 1) + (grid + 1) * iy
-          face = new THREE.Face4(a + offset, b + offset, c + offset, d + offset)
+          @faces.push new THREE.Face4 a + offset, b + offset, c + offset, d + offset
+          @faceVertexUvs[0].push [new THREE.UV, new THREE.UV, new THREE.UV, new THREE.UV]
 
+    # Create materials for all potential tiles so we can switch to them
+    # easily later. Map from key to index in @materials.
+    @material_map = {}
+    for tl in [0..@tile_level_max]
+      tiles = 1 << tl
+      for facecode in 'rludfb'
+        for tx in [0...tiles]
+          for ty in [0...tiles]
+            key = "#{facecode} #{tl} #{tx} #{ty}"
+            @material_map[key] = @materials.length
+            url = get_url(tl, facecode, tx, ty)
+            @materials.push make_material url, max_aniso, redraw
+
+    @computeCentroids()
+    @mergeVertices()
+
+    # Set initial materialIndexes and uvs.
+    @switch_tile_level 0
+
+  switch_tile_level: (new_tile_level) ->
+    new_tile_level = Math.min @tile_level_max, new_tile_level
+    if new_tile_level == @tile_level
+      return
+    @tile_level = new_tile_level
+
+    grid = 1 << @split_level
+    tile_div = 1 << (@split_level - @tile_level)
+
+    faceidx = 0
+    # Note: order must match loop in constructor.
+    for facecode in 'rludfb'
+      for iy in [0...grid]
+        for ix in [0...grid]
           tx = Math.floor ix / tile_div
           ty = Math.floor iy / tile_div
           itx = ix - tx * tile_div
           ity = iy - ty * tile_div
 
-          url = get_url(tile_level, facecode, tx, ty)
-          idx = url_idx_map[url]
-          if idx is undefined
-            url_idx_map[url] = idx = @materials.length
-            @materials.push make_material url, max_aniso, redraw
-          face.materialIndex = idx
-          @faces.push face
+          key = "#{facecode} #{@tile_level} #{tx} #{ty}"
+          @faces[faceidx].materialIndex = @material_map[key]
 
-          @faceVertexUvs[0].push [
-            new THREE.UV(itx / tile_div, 1 - ity / tile_div)
-            new THREE.UV(itx / tile_div, 1 - (ity + 1) / tile_div)
-            new THREE.UV((itx + 1) / tile_div, 1 - (ity + 1) / tile_div)
-            new THREE.UV((itx + 1) / tile_div, 1 - ity / tile_div)
-          ]
+          uvs = @faceVertexUvs[0][faceidx]
+          uvs[0].set itx / tile_div, 1 - ity / tile_div
+          uvs[1].set itx / tile_div, 1 - (ity + 1) / tile_div
+          uvs[2].set (itx + 1) / tile_div, 1 - (ity + 1) / tile_div
+          uvs[3].set (itx + 1) / tile_div, 1 - ity / tile_div
 
-      null
+          faceidx++
 
-    build_plane 'z', 'y', 'x', -1, -1,  1, 'r'
-    build_plane 'z', 'y', 'x',  1, -1, -1, 'l'
-    build_plane 'x', 'z', 'y',  1,  1,  1, 'u'
-    build_plane 'x', 'z', 'y',  1, -1, -1, 'd'
-    build_plane 'x', 'y', 'z',  1, -1,  1, 'f'
-    build_plane 'x', 'y', 'z', -1, -1, -1, 'b'
-
-    @computeCentroids()
-    @mergeVertices()
+    @uvsNeedUpdate = true
 
 
 # storage interface:
@@ -530,15 +562,10 @@ class Ocicle
       if FORCE_CANVAS_RENDERER then throw 'asdf'
       @t_renderer = new THREE.WebGLRenderer {canvas: @c3}
       set_text 'renderer_name', 'webgl'
-      split = 4
     catch _
       console.log "falling back to CanvasRenderer"
       @t_renderer = new THREE.CanvasRenderer {canvas: @c3}
       set_text 'renderer_name', 'sw'
-      # Always split into at least 16ths for the canvas renderer,
-      # to cover up affine mapping artifacts. 3 isn't enough, 5 is
-      # too slow, 4 works well.
-      split = 4
 
     @t_renderer.setSize @cw, @ch
     @t_camera = new THREE.PerspectiveCamera @view3.fov, @cw/@ch, 1, 10000
@@ -551,8 +578,8 @@ class Ocicle
       "tiles/#{name}/#{face}/#{level}/#{ix}_#{iy}.jpg"
     pano = get_url('nativity_pano')
     max_aniso = @t_renderer.getMaxAnisotropy()
-    geometry = new DynCube 128, split, 0, pano, max_aniso, @redraw
-    @t_mesh = new THREE.Mesh geometry, new THREE.MeshFaceMaterial()
+    @t_geometry = new DynCube 128, 3, pano, max_aniso, @redraw
+    @t_mesh = new THREE.Mesh @t_geometry, new THREE.MeshFaceMaterial()
     @t_mesh.scale.x = -1
 
     @t_scene.add @t_mesh
@@ -1107,12 +1134,17 @@ class Ocicle
     @update_fps()
 
     if @three_d
+      # Render what we have now.
       @point_camera @view3
-
-      # Render what we have.
       @t_renderer.render @t_scene, @t_camera
 
-      # Project scene to figure out what's on the screen.
+      # For the next frame, adjust tile level based on fov.
+      if @view3.fov < 40
+        @t_geometry.switch_tile_level 3
+      else
+        @t_geometry.switch_tile_level 0
+
+      # Project to figure out what's visible, then fetch those tiles.
       data = @t_projector.projectScene @t_scene, @t_camera, false, false
       for e in data.elements
         continue unless e instanceof THREE.RenderableFace4
