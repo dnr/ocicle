@@ -14,7 +14,8 @@
 #
 # 3d:
 # change level as zoom changes
-# load tiles on-demand
+# load tiles through tilecache
+# drop some tiles when no longer on screen
 # build customized three.js
 
 DRAG_FACTOR = 2
@@ -178,20 +179,40 @@ compute_flying_path = (cw, ch, start, end) ->
     new View scale, pan_x, pan_y
 
 
-make_material = (url, max_aniso) ->
-  img = new ImageLoader url
-  tex = new THREE.Texture img.dom
+# e: THREE.RenderableFace4
+is_off_screen = (e) ->
+  {v1, v2, v3, v4} = e
+  x1 = v1.positionScreen.x
+  y1 = v1.positionScreen.y
+  x2 = v2.positionScreen.x
+  y2 = v2.positionScreen.y
+  x3 = v3.positionScreen.x
+  y3 = v3.positionScreen.y
+  x4 = v4.positionScreen.x
+  y4 = v4.positionScreen.y
+  Math.min(x1, x2, x3, x4) > 1 or
+  Math.max(x1, x2, x3, x4) < -1 or
+  Math.min(y1, y2, y3, y4) > 1 or
+  Math.max(y1, y2, y3, y4) < -1
+
+
+make_material = (url, max_aniso, redraw) ->
+  tex = new THREE.Texture
   tex.anisotropy = max_aniso
   tex.minFilter = THREE.LinearFilter
   tex.generateMipmaps = false
-  img.add_cb () ->
+  cb = (img) ->
+    tex.image = img.dom
     tex.needsUpdate = true
+    redraw()
+  img = new ImageLoader url, cb, false
+  tex._ocicle_loader = img
   new THREE.MeshBasicMaterial {map: tex, overdraw: true}
 
 
 # Heavily adapted from three.js's CubeGeometry.
 # https://github.com/mrdoob/three.js/blob/master/src/extras/geometries/CubeGeometry.js
-DynCube = (size, split_level, tile_level, get_url, max_aniso) ->
+DynCube = (size, split_level, tile_level, get_url, max_aniso, redraw) ->
   THREE.Geometry.call this
   scope = this
   @materials = []
@@ -230,7 +251,7 @@ DynCube = (size, split_level, tile_level, get_url, max_aniso) ->
         idx = url_idx_map[url]
         if idx is undefined
           url_idx_map[url] = idx = scope.materials.length
-          scope.materials.push make_material url, max_aniso
+          scope.materials.push make_material url, max_aniso, redraw
         face.materialIndex = idx
         scope.faces.push face
 
@@ -348,23 +369,24 @@ class ImageLoader
   delay = (func) ->
     () -> window.setTimeout func, FAKE_DELAY + 200 * Math.random()
 
-  constructor: (src) ->
-    @complete = false
-    @cbs = []
-    @dom = new Image()
-    @dom.src = src
-    @dom.addEventListener 'load', if FAKE_DELAY then delay @_onload else @_onload
-    @dom.addEventListener 'error', if FAKE_DELAY then delay @_onerror else @_onerror
-    requested++
+  constructor: (@src, @cb, autoload=true) ->
+    @load() if autoload
 
-  add_cb: (cb) ->
-    @cbs.push cb
+  load: () ->
+    if @src
+      @complete = false
+      @dom = new Image()
+      @dom.addEventListener 'load', if FAKE_DELAY then delay @_onload else @_onload
+      @dom.addEventListener 'error', if FAKE_DELAY then delay @_onerror else @_onerror
+      requested++
+      @dom.src = @src
+      @src = null
 
   _onload: () =>
     done++
     @complete = true
-    cb @ for cb in @cbs
-    delete @cbs
+    @cb @ if @cb
+    delete @cb
 
   _onerror: () =>
     done++
@@ -401,7 +423,7 @@ class DZImage
   clip_level: (level) ->
     Math.min(Math.max(level, @min_level), @max_level)
 
-  render_onto_ctx: (ctx, tile_cache, x, y, w, h, cb) ->
+  render_onto_ctx: (ctx, tile_cache, x, y, w, h, redraw) ->
     tile_size = @meta.ts
 
     level = @clip_level 1 + @find_level Math.max w, h
@@ -442,10 +464,8 @@ class DZImage
             break
           else if level2 == level
             if not img
-              img = new ImageLoader src
+              img = new ImageLoader src, redraw
               tile_cache.put src, img
-            if cb
-              img.add_cb cb
     return
 
 
@@ -486,13 +506,13 @@ class Ocicle
 
     @fov_target = 50
     @view3 = new View3 @fov_target, 0, 90
-    @view3_t = new View3
+    @view3_t = new View3  # reusable object
     @three_d = false
 
     @setup_contexts()
 
     @view = new View 1/10000, @cw2, @ch2
-    @view_t = new View
+    @view_t = new View  # reusable object
 
     @slide_to (new View 1, 0, 0), FLY_MS, false
 
@@ -514,7 +534,7 @@ class Ocicle
       if FORCE_CANVAS_RENDERER then throw 'asdf'
       @t_renderer = new THREE.WebGLRenderer {canvas: @c3}
       set_text 'renderer_name', 'webgl'
-      split = 0
+      split = 4
     catch _
       console.log "falling back to CanvasRenderer"
       @t_renderer = new THREE.CanvasRenderer {canvas: @c3}
@@ -526,15 +546,16 @@ class Ocicle
 
     @t_renderer.setSize @cw, @ch
     @t_camera = new THREE.PerspectiveCamera @view3.fov, @cw/@ch, 1, 10000
-    @t_target = new THREE.Vector3 0, 0, 0
+    @t_target = new THREE.Vector3 0, 0, 0  # reusable object
     @t_scene = new THREE.Scene()
+    @t_projector = new THREE.Projector()
 
     get_url = (name, base=9) -> (level, face, ix, iy) ->
       level = base + level
       "tiles/#{name}/#{face}/#{level}/#{ix}_#{iy}.jpg"
     pano = get_url('nativity_pano')
     max_aniso = @t_renderer.getMaxAnisotropy()
-    geometry = new DynCube 128, split, 1, pano, max_aniso
+    geometry = new DynCube 128, split, 0, pano, max_aniso, @redraw
     @t_mesh = new THREE.Mesh geometry, new THREE.MeshFaceMaterial()
     @t_mesh.scale.x = -1
 
@@ -920,7 +941,10 @@ class Ocicle
 
 
   draw_background: () ->
-    return unless @bkgd_image.complete
+    if not @bkgd_image.complete
+      # If we're not going to draw over everything, clear it.
+      @ctx2.clearRect 0, 0, @cw, @ch
+      return
 
     ctx = @ctx2
     img = @bkgd_image.dom
@@ -996,7 +1020,7 @@ class Ocicle
     ctx.strokeStyle = 'hsl(210,5%,25%)'
     ctx.stroke()
 
-  draw_images: (really, view, img_load_cb) ->
+  draw_images: (really, view, redraw) ->
     max_ratio = 0
     ctx = @ctx2
 
@@ -1039,7 +1063,7 @@ class Ocicle
         ctx.shadowOffsetX = ctx.shadowOffsetY = 0
 
       draw_ctx = if really then ctx else null
-      i.render_onto_ctx draw_ctx, @tile_cache, x, y, w, h, img_load_cb
+      i.render_onto_ctx draw_ctx, @tile_cache, x, y, w, h, redraw
 
       if really
         ctx.restore()
@@ -1072,25 +1096,34 @@ class Ocicle
     for t in [0..5]
       @draw_images false, path(t/5), null
 
+  point_camera: (view) ->
+    @t_camera.projectionMatrix.makePerspective view.fov, @cw/@ch, 1, 10000
+    phi = ( 90 - view.lat ) * Math.PI / 180
+    theta = view.lon * Math.PI / 180
+    t = @t_target
+    t.x = 50 * Math.sin(phi) * Math.cos(theta)
+    t.y = 50 * Math.cos(phi)
+    t.z = 50 * Math.sin(phi) * Math.sin(theta)
+    @t_camera.lookAt t
+
   render: () ->
     @request_id = null
     @update_fps()
 
     if @three_d
-      @t_camera.projectionMatrix.makePerspective @view3.fov, @cw/@ch, 1, 10000
+      @point_camera @view3
 
-      phi = ( 90 - @view3.lat ) * Math.PI / 180
-      theta = @view3.lon * Math.PI / 180
-      t = @t_target
-      t.x = 50 * Math.sin(phi) * Math.cos(theta)
-      t.y = 50 * Math.cos(phi)
-      t.z = 50 * Math.sin(phi) * Math.sin(theta)
-      @t_camera.lookAt t
-
+      # Render what we have.
       @t_renderer.render @t_scene, @t_camera
 
+      # Project scene to figure out what's on the screen.
+      data = @t_projector.projectScene @t_scene, @t_camera, false, false
+      for e in data.elements
+        continue unless e instanceof THREE.RenderableFace4
+        unless is_off_screen e
+          e.material.map._ocicle_loader.load()
+
     else
-      #@ctx2.clearRect 0, 0, @cw, @ch
       @draw_background()
       @update_highlight_image()
       if @editmode and @gridsize then @draw_grid()
