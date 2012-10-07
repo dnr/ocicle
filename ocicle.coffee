@@ -226,7 +226,14 @@ class DynCube extends THREE.Geometry
     segment = size / grid
     size_half = size / 2
 
-    build_plane = (u, v, w, udir, vdir, wdir, facecode) =>
+    for [u, v, w, udir, vdir, wdir, facecode] in [
+      ['z', 'y', 'x', -1, -1,  1, 'r']
+      ['z', 'y', 'x',  1, -1, -1, 'l']
+      ['x', 'z', 'y',  1,  1,  1, 'u']
+      ['x', 'z', 'y',  1, -1, -1, 'd']
+      ['x', 'y', 'z',  1, -1,  1, 'f']
+      ['x', 'y', 'z', -1, -1, -1, 'b']
+    ]
       offset = @vertices.length
       for iy in [0..grid]
         for ix in [0..grid]
@@ -263,15 +270,6 @@ class DynCube extends THREE.Geometry
             new THREE.UV((itx + 1) / tile_div, 1 - (ity + 1) / tile_div)
             new THREE.UV((itx + 1) / tile_div, 1 - ity / tile_div)
           ]
-
-      null
-
-    build_plane 'z', 'y', 'x', -1, -1,  1, 'r'
-    build_plane 'z', 'y', 'x',  1, -1, -1, 'l'
-    build_plane 'x', 'z', 'y',  1,  1,  1, 'u'
-    build_plane 'x', 'z', 'y',  1, -1, -1, 'd'
-    build_plane 'x', 'y', 'z',  1, -1,  1, 'f'
-    build_plane 'x', 'y', 'z', -1, -1, -1, 'b'
 
     @computeCentroids()
     @mergeVertices()
