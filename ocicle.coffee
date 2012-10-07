@@ -202,7 +202,7 @@ is_off_screen = (e) ->
 
 # Heavily adapted from three.js's CubeGeometry.
 # https://github.com/mrdoob/three.js/blob/master/src/extras/geometries/CubeGeometry.js
-class DynCube extends THREE.Geometry
+class PanoCube extends THREE.Geometry
   make_material = (url, max_aniso, redraw) ->
     tex = new THREE.Texture
     tex.anisotropy = max_aniso
@@ -237,7 +237,7 @@ class DynCube extends THREE.Geometry
       offset = @vertices.length
       for iy in [0..grid]
         for ix in [0..grid]
-          vector = new THREE.Vector3()
+          vector = new THREE.Vector3
           vector[u] = (ix * segment - size_half) * udir
           vector[v] = (iy * segment - size_half) * vdir
           vector[w] = size_half * wdir
@@ -249,7 +249,8 @@ class DynCube extends THREE.Geometry
           b = ix + (grid + 1) * (iy + 1)
           c = (ix + 1) + (grid + 1) * (iy + 1)
           d = (ix + 1) + (grid + 1) * iy
-          face = new THREE.Face4(a + offset, b + offset, c + offset, d + offset)
+          face = new THREE.Face4 a + offset, b + offset, c + offset, d + offset
+          @faces.push face
 
           tx = Math.floor ix / tile_div
           ty = Math.floor iy / tile_div
@@ -262,13 +263,12 @@ class DynCube extends THREE.Geometry
             url_idx_map[url] = idx = @materials.length
             @materials.push make_material url, max_aniso, redraw
           face.materialIndex = idx
-          @faces.push face
 
           @faceVertexUvs[0].push [
-            new THREE.UV(itx / tile_div, 1 - ity / tile_div)
-            new THREE.UV(itx / tile_div, 1 - (ity + 1) / tile_div)
-            new THREE.UV((itx + 1) / tile_div, 1 - (ity + 1) / tile_div)
-            new THREE.UV((itx + 1) / tile_div, 1 - ity / tile_div)
+            new THREE.UV itx / tile_div, 1 - ity / tile_div
+            new THREE.UV itx / tile_div, 1 - (ity + 1) / tile_div
+            new THREE.UV (itx + 1) / tile_div, 1 - (ity + 1) / tile_div
+            new THREE.UV (itx + 1) / tile_div, 1 - ity / tile_div
           ]
 
     @computeCentroids()
@@ -551,7 +551,7 @@ class Ocicle
       "tiles/#{name}/#{face}/#{level}/#{ix}_#{iy}.jpg"
     pano = get_url('nativity_pano')
     max_aniso = @t_renderer.getMaxAnisotropy()
-    geometry = new DynCube 128, split, 0, pano, max_aniso, @redraw
+    geometry = new PanoCube 128, split, 0, pano, max_aniso, @redraw
     @t_mesh = new THREE.Mesh geometry, new THREE.MeshFaceMaterial()
     @t_mesh.scale.x = -1
 
