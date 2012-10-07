@@ -210,7 +210,7 @@ class DynCube extends THREE.Geometry
     # to cover up affine mapping artifacts. 3 isn't enough, 5 is
     # too slow, 4 works well.
     @split_level = Math.max 4, @tile_level_max
-    @texture_map = {}
+    @material_map = {}
 
     grid = 1 << @split_level
     segment = size / grid
@@ -243,13 +243,13 @@ class DynCube extends THREE.Geometry
           face.materialIndex = @materials.length
           @faces.push face
           @faceVertexUvs[0].push [new THREE.UV, new THREE.UV, new THREE.UV, new THREE.UV]
-          @materials.push new THREE.MeshBasicMaterial {overdraw: true}
-
-    @computeCentroids()
-    @mergeVertices()
+          @materials.push null
 
     # Set initial textures and uvs.
     @switch_tile_level 0
+
+    @computeCentroids()
+    @mergeVertices()
 
   switch_tile_level: (new_tile_level) ->
     new_tile_level = clamp new_tile_level, 0, @tile_level_max
@@ -271,7 +271,7 @@ class DynCube extends THREE.Geometry
           itx = ix - tx * tile_div
           ity = iy - ty * tile_div
 
-          @materials[faceidx].map = @get_texture @tile_level, facecode, tx, ty
+          @materials[faceidx] = @get_material @tile_level, facecode, tx, ty
 
           uvs = @faceVertexUvs[0][faceidx]
           uvs[0].set itx / tile_div, 1 - ity / tile_div
@@ -283,10 +283,10 @@ class DynCube extends THREE.Geometry
 
     @uvsNeedUpdate = true
 
-  get_texture: (level, facecode, tx, ty) ->
+  get_material: (level, facecode, tx, ty) ->
     url = @get_url(level, facecode, tx, ty)
-    tex = @texture_map[url]
-    if not tex
+    mat = @material_map[url]
+    if not mat
       tex = new THREE.Texture
       tex.anisotropy = @max_aniso
       # We effectively do our own mipmapping, so disable this to save some
@@ -299,8 +299,9 @@ class DynCube extends THREE.Geometry
         @redraw()
       img = new ImageLoader url, cb, false
       tex._ocicle_loader = img
-      @texture_map[url] = tex
-    tex
+      mat = new THREE.MeshBasicMaterial {map: tex, overdraw: true}
+      @material_map[url] = mat
+    mat
 
 
 # storage interface:
