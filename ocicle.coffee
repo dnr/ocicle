@@ -35,7 +35,7 @@ DEBUG_BORDERS = false
 ZOOM_LIMIT_LIMIT = 3.3
 ZOOM_LIMIT_TARGET = 3.0
 UNZOOM_LIMIT = 1/10
-FORCE_CANVAS_RENDERER = true
+FORCE_CANVAS_RENDERER = false
 
 BKGD_SCALEFACTOR = 8
 BKGD_IMAGE = 'bkgd/bk.jpg'
@@ -203,28 +203,14 @@ is_off_screen = (e) ->
 # Heavily adapted from three.js's CubeGeometry.
 # https://github.com/mrdoob/three.js/blob/master/src/extras/geometries/CubeGeometry.js
 class DynCube extends THREE.Geometry
-  make_material = (url, max_aniso, redraw) ->
-    tex = new THREE.Texture
-    tex.anisotropy = max_aniso
-    # We effectively do our own mipmapping, so disable this to save some
-    # memory and time.
-    tex.minFilter = THREE.LinearFilter
-    tex.generateMipmaps = false
-    cb = (img) ->
-      tex.image = img.dom
-      tex.needsUpdate = true
-      redraw()
-    img = new ImageLoader url, cb, false
-    tex._ocicle_loader = img
-    new THREE.MeshBasicMaterial {map: tex, overdraw: true}
-
-  constructor: (size, @tile_level_max, get_url, max_aniso, redraw) ->
+  constructor: (size, @tile_level_max, @get_url, @max_aniso, @redraw) ->
     super()
 
     # Always split into at least 16ths for the canvas renderer,
     # to cover up affine mapping artifacts. 3 isn't enough, 5 is
     # too slow, 4 works well.
     @split_level = Math.max 4, @tile_level_max
+    @texture_map = {}
 
     grid = 1 << @split_level
     segment = size / grid
@@ -253,26 +239,16 @@ class DynCube extends THREE.Geometry
           b = ix + (grid + 1) * (iy + 1)
           c = (ix + 1) + (grid + 1) * (iy + 1)
           d = (ix + 1) + (grid + 1) * iy
-          @faces.push new THREE.Face4 a + offset, b + offset, c + offset, d + offset
+          face = new THREE.Face4 a + offset, b + offset, c + offset, d + offset
+          face.materialIndex = @materials.length
+          @faces.push face
           @faceVertexUvs[0].push [new THREE.UV, new THREE.UV, new THREE.UV, new THREE.UV]
-
-    # Create materials for all potential tiles so we can switch to them
-    # easily later. Map from key to index in @materials.
-    @material_map = {}
-    for tl in [0..@tile_level_max]
-      tiles = 1 << tl
-      for facecode in 'rludfb'
-        for tx in [0...tiles]
-          for ty in [0...tiles]
-            key = "#{facecode} #{tl} #{tx} #{ty}"
-            @material_map[key] = @materials.length
-            url = get_url(tl, facecode, tx, ty)
-            @materials.push make_material url, max_aniso, redraw
+          @materials.push new THREE.MeshBasicMaterial {overdraw: true}
 
     @computeCentroids()
     @mergeVertices()
 
-    # Set initial materialIndexes and uvs.
+    # Set initial textures and uvs.
     @switch_tile_level 0
 
   switch_tile_level: (new_tile_level) ->
@@ -280,6 +256,7 @@ class DynCube extends THREE.Geometry
     if new_tile_level == @tile_level
       return
     @tile_level = new_tile_level
+    console.log "switching to #{@tile_level}"
 
     grid = 1 << @split_level
     tile_div = 1 << (@split_level - @tile_level)
@@ -294,8 +271,7 @@ class DynCube extends THREE.Geometry
           itx = ix - tx * tile_div
           ity = iy - ty * tile_div
 
-          key = "#{facecode} #{@tile_level} #{tx} #{ty}"
-          @faces[faceidx].materialIndex = @material_map[key]
+          @materials[faceidx].map = @get_texture @tile_level, facecode, tx, ty
 
           uvs = @faceVertexUvs[0][faceidx]
           uvs[0].set itx / tile_div, 1 - ity / tile_div
@@ -306,6 +282,25 @@ class DynCube extends THREE.Geometry
           faceidx++
 
     @uvsNeedUpdate = true
+
+  get_texture: (level, facecode, tx, ty) ->
+    url = @get_url(level, facecode, tx, ty)
+    tex = @texture_map[url]
+    if not tex
+      tex = new THREE.Texture
+      tex.anisotropy = @max_aniso
+      # We effectively do our own mipmapping, so disable this to save some
+      # memory and time.
+      tex.minFilter = THREE.LinearFilter
+      tex.generateMipmaps = false
+      cb = (img) =>
+        tex.image = img.dom
+        tex.needsUpdate = true
+        @redraw()
+      img = new ImageLoader url, cb, false
+      tex._ocicle_loader = img
+      @texture_map[url] = tex
+    tex
 
 
 # storage interface:
