@@ -13,11 +13,11 @@
 # queue for downloading images
 #
 # 3d:
-# change level as zoom changes
 # load tiles through tilecache
 # drop some tiles when no longer on screen
 # compressed textures
 # build customized three.js
+# update ratio
 
 DRAG_FACTOR = 2
 DRAG_FACTOR_3D = 180
@@ -35,7 +35,7 @@ DEBUG_BORDERS = false
 ZOOM_LIMIT_LIMIT = 3.3
 ZOOM_LIMIT_TARGET = 3.0
 UNZOOM_LIMIT = 1/10
-FORCE_CANVAS_RENDERER = false
+FORCE_CANVAS_RENDERER = true
 
 BKGD_SCALEFACTOR = 8
 BKGD_IMAGE = 'bkgd/bk.jpg'
@@ -570,6 +570,7 @@ class Ocicle
     @t_scene = new THREE.Scene()
     @t_projector = new THREE.Projector()
 
+    # FIXME: parameterize all of this
     get_url = (name, base=9) -> (level, face, ix, iy) ->
       level = base + level
       "tiles/#{name}/#{face}/#{level}/#{ix}_#{iy}.jpg"
@@ -1137,10 +1138,10 @@ class Ocicle
 
       # For the next frame, adjust tile level based on fov.
       bias = -0.5
-      tile_size = 512
+      tile_size = 512 # FIXME: parameterize
       proj_h = tile_size / 2 * Math.tan(@view3.fov * Math.PI / 180 / 2)
       level = Math.floor log2(@ch / proj_h) + bias
-      level = clamp level, 0, 3
+      level = clamp level, 0, 3 # FIXME: parameterize
       @t_geometry.switch_tile_level level
 
       # Project to figure out what's visible, then fetch those tiles.
