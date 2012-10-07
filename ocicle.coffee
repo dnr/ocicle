@@ -29,13 +29,22 @@ FLY_MS = 1500
 PLAY_HOLD_MS = 3000
 FRAME_WIDTH = 1/150
 TILE_CACHE_SIZE = 600
-FAKE_DELAY = 0 #+500
+FAKE_DELAY = 0 #+1500
 CENTER_BORDER = 40
 DEBUG_BORDERS = false
 ZOOM_LIMIT_LIMIT = 3.3
 ZOOM_LIMIT_TARGET = 3.0
 UNZOOM_LIMIT = 1/10
-FORCE_CANVAS_RENDERER = false
+
+# Set false for more speed.
+HIGH_QUALITY = true
+
+if HIGH_QUALITY
+  FORCE_CANVAS_RENDERER = false
+  PANO_DRAW_LOWER_LEVELS = true
+else
+  FORCE_CANVAS_RENDERER = true
+  PANO_DRAW_LOWER_LEVELS = false
 
 BKGD_SCALEFACTOR = 8
 BKGD_IMAGE = 'bkgd/bk.jpg'
@@ -208,13 +217,14 @@ class PanoCube extends THREE.Geometry
     tex.anisotropy = max_aniso
     tex.minFilter = THREE.LinearFilter
     tex.generateMipmaps = false
-    cb = (img) ->
-      tex.image = img.dom
+    mat = new THREE.MeshBasicMaterial {map: tex, overdraw: true, visible: false}
+    cb = (loader) =>
+      tex.image = loader.dom
       tex.needsUpdate = true
+      mat.visible = true
       redraw()
-    img = new ImageLoader url, cb, false
-    tex._ocicle_loader = img
-    new THREE.MeshBasicMaterial {map: tex, overdraw: true}
+    mat._ocicle_loader = new ImageLoader url, cb, false
+    mat
 
   constructor: (size, split_level, tile_level, get_url, max_aniso, redraw) ->
     super()
@@ -465,6 +475,24 @@ class DZImage
     return
 
 
+# DZPano requirements:
+# Tile size must be a power-of-two.
+# All tiles must be exactly ts x ts, no overlap.
+# All levels must exactly cover the entire face, so if tile size is 512,
+# level 9 must be the full cube faces.
+# This implies the original size must also be a power of two.
+# Levels is the total number of levels, so if the faces are 4096x4096,
+# levels is 4 (9, 10, 11, 12).
+class DZPano
+  constructor: (@meta) ->
+    {@name, @levels, @ts} = @meta
+    @base_level = log2 @ts
+
+  get_url: (level, face, ix, iy) =>
+    level = @base_level + level
+    "tiles/#{@name}/#{face}/#{level}/#{ix}_#{iy}.jpg"
+
+
 class View
   constructor: (@scale, @pan_x, @pan_y) ->
 
@@ -530,7 +558,7 @@ class Ocicle
       if FORCE_CANVAS_RENDERER then throw 'asdf'
       @t_renderer = new THREE.WebGLRenderer {canvas: @c3}
       set_text 'renderer_name', 'webgl'
-      split = 4
+      split = 0
     catch _
       console.log "falling back to CanvasRenderer"
       @t_renderer = new THREE.CanvasRenderer {canvas: @c3}
@@ -546,17 +574,21 @@ class Ocicle
     @t_scene = new THREE.Scene()
     @t_projector = new THREE.Projector()
 
-    get_url = (name, base=9) -> (level, face, ix, iy) ->
-      level = base + level
-      "tiles/#{name}/#{face}/#{level}/#{ix}_#{iy}.jpg"
-    pano = get_url('nativity_pano')
+    @t_pano = new DZPano
+      name: 'nativity_pano'
+      levels: 4
+      ts: 512
     max_aniso = @t_renderer.getMaxAnisotropy()
-    geometry = new PanoCube 128, split, 0, pano, max_aniso, @redraw
-    @t_mesh = new THREE.Mesh geometry, new THREE.MeshFaceMaterial()
-    @t_mesh.scale.x = -1
+    @t_meshes = for level in [0...@t_pano.levels]
+      size = 512 - 32 * level  # try to keep this divisible by 32
+      geometry = new PanoCube size, split, level, @t_pano.get_url, max_aniso, @redraw
+      mesh = new THREE.Mesh geometry, new THREE.MeshFaceMaterial()
+      mesh.scale.x = -1
+      mesh.visible = false
+      @t_scene.add mesh
+      mesh
 
-    @t_scene.add @t_mesh
-
+    return
 
   setup_bookmarks: () ->
     ul = $('gotolist')
@@ -1113,18 +1145,18 @@ class Ocicle
 
       # For the next frame, adjust tile level based on fov.
       bias = -0.5
-      tile_size = 512 # FIXME: parameterize
-      proj_h = tile_size / 2 * Math.tan(@view3.fov * Math.PI / 180 / 2)
+      proj_h = @t_pano.ts / 2 * Math.tan(@view3.fov * Math.PI / 180 / 2)
       level = Math.floor log2(@ch / proj_h) + bias
-      level = clamp level, 0, 3 # FIXME: parameterize
-      # FIXME: apply level
+      level = clamp level, 0, @t_pano.levels - 1
+      for i in [0...@t_pano.levels]
+        @t_meshes[i].visible = if PANO_DRAW_LOWER_LEVELS then i <= level else i == level
 
       # Project to figure out what's visible, then fetch those tiles.
       data = @t_projector.projectScene @t_scene, @t_camera, false, false
       for e in data.elements
         continue unless e instanceof THREE.RenderableFace4
         unless is_off_screen e
-          e.material.map._ocicle_loader.load()
+          e.material._ocicle_loader.load()
 
     else
       @draw_background()
