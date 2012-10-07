@@ -13,10 +13,11 @@
 # queue for downloading images
 #
 # 3d:
-# change level as zoom changes
 # load tiles through tilecache
 # drop some tiles when no longer on screen
+# compressed textures
 # build customized three.js
+# update ratio
 
 DRAG_FACTOR = 2
 DRAG_FACTOR_3D = 180
@@ -65,6 +66,9 @@ cancelFrame = window.cancelAnimationFrame       ||
 
 $ = (id) -> document.getElementById id
 set_text = (id, t) -> $(id).innerText = t
+
+clamp = (x, min, max) ->
+  Math.min max, Math.max min, x
 
 rect_is_outside = (cw, ch, x, y, w, h) ->
   x + w < 0 or y + h < 0 or x > cw or y > ch
@@ -416,13 +420,11 @@ class DZImage
   find_level: (dim) ->
     Math.ceil log2 dim
 
-  clip_level: (level) ->
-    Math.min(Math.max(level, @min_level), @max_level)
-
   render_onto_ctx: (ctx, tile_cache, x, y, w, h, redraw) ->
     tile_size = @meta.ts
 
-    level = @clip_level 1 + @find_level Math.max w, h
+    level = 1 + @find_level Math.max w, h
+    level = clamp level, @min_level, @max_level
     source_scale = 1 << (@max_level - level)
     max_c = @w / source_scale / tile_size
     max_r = @h / source_scale / tile_size
@@ -698,7 +700,7 @@ class Ocicle
           if @three_d
             factor = DRAG_FACTOR_3D * Math.tan(@view3.fov / 2 * Math.PI / 180) / @cw2
             lat = @drag_view3.lat + factor * move_y
-            @view3_t.lat = Math.max -89, Math.min 89, lat
+            @view3_t.lat = clamp lat, -89, 89
             @view3_t.lon = @drag_view3.lon - factor * move_x
             @view3_t.fov = @view3.fov
             @slide_to_3d @view3_t
@@ -873,7 +875,7 @@ class Ocicle
   do_zoom_3d: (factor, client_x, client_y) ->
     # TODO: use clientxy
     fov = @fov_target / factor
-    @fov_target = Math.max 4, Math.min 120, fov
+    @fov_target = clamp fov, 4, 120
     @view3_t.fov = @fov_target
     @view3_t.lat = @view3.lat
     @view3_t.lon = @view3.lon
@@ -1107,12 +1109,19 @@ class Ocicle
     @update_fps()
 
     if @three_d
+      # Render what we have now.
       @point_camera @view3
-
-      # Render what we have.
       @t_renderer.render @t_scene, @t_camera
 
-      # Project scene to figure out what's on the screen.
+      # For the next frame, adjust tile level based on fov.
+      bias = -0.5
+      tile_size = 512 # FIXME: parameterize
+      proj_h = tile_size / 2 * Math.tan(@view3.fov * Math.PI / 180 / 2)
+      level = Math.floor log2(@ch / proj_h) + bias
+      level = clamp level, 0, 3 # FIXME: parameterize
+      # FIXME: apply level
+
+      # Project to figure out what's visible, then fetch those tiles.
       data = @t_projector.projectScene @t_scene, @t_camera, false, false
       for e in data.elements
         continue unless e instanceof THREE.RenderableFace4
