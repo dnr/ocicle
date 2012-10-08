@@ -16,8 +16,8 @@
 # load tiles through tilecache
 # drop some tiles when no longer on screen
 # compressed textures
-# build customized three.js
 # update ratio
+# fix projectScene bug: gets too much when switched to ||s
 
 DRAG_FACTOR = 2
 DRAG_FACTOR_3D = 180
@@ -1152,7 +1152,7 @@ class Ocicle
         @t_meshes[i].visible = if PANO_DRAW_LOWER_LEVELS then i <= level else i == level
 
       # Project to figure out what's visible, then fetch those tiles.
-      data = @t_projector.projectScene @t_scene, @t_camera, false, false
+      data = @t_projector.projectScene @t_scene, @t_camera, false, false, true
       for e in data.elements
         continue unless e instanceof THREE.RenderableFace4
         unless is_off_screen e
