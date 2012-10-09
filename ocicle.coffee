@@ -476,21 +476,23 @@ class DZImage
 
 
 # DZPano requirements:
-# Tile size must be a power-of-two.
-# All tiles must be exactly ts x ts, no overlap.
-# All levels must exactly cover the entire face, so if tile size is 512,
-# level 9 must be the full cube faces.
-# This implies the original size must also be a power of two.
-# Levels is the total number of levels, so if the faces are 4096x4096,
-# levels is 4 (9, 10, 11, 12).
+# The dimensions of the cube faces must be a power of two times the tile
+# size. So if your tiles are 512x512, the faces must be either 1024,
+# 2048, 4096, etc. The base level is the level where one tile exactly
+# covers the face.
 class DZPano
   constructor: (@meta) ->
-    {@name, @levels, @ts} = @meta
-    @base_level = log2 @ts
+    {@name, size, @ts} = @meta
+    tiles = size / @ts
+    if tiles != Math.floor tiles or tiles & (tiles - 1)
+      console.warn "Cube face size #{size} is not POT times tile size #{@ts}"
+    @base_level = Math.ceil log2 @ts
+    @max_level = Math.ceil log2 size
+    @levels = @max_level - @base_level + 1
 
   get_url: (level, face, ix, iy) =>
     level = @base_level + level
-    "tiles/#{@name}/#{face}/#{level}/#{ix}_#{iy}.jpg"
+    "tiles/#{@name}_#{face}/#{level}/#{ix}_#{iy}.jpg"
 
 
 class View
@@ -576,11 +578,11 @@ class Ocicle
 
     @t_pano = new DZPano
       name: 'nativity_pano'
-      levels: 4
-      ts: 512
+      size: 7360
+      ts: 460
     max_aniso = @t_renderer.getMaxAnisotropy()
     @t_meshes = for level in [0...@t_pano.levels]
-      size = 512 - 32 * level  # try to keep this divisible by 32
+      size = 100 - level
       geometry = new PanoCube size, split, level, @t_pano.get_url, max_aniso, @redraw
       mesh = new THREE.Mesh geometry, new THREE.MeshFaceMaterial()
       mesh.scale.x = -1
