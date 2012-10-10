@@ -18,6 +18,12 @@
 # compressed textures
 # update ratio
 # fix projectScene bug: gets too much when switched to ||s
+# drag by unprojecting/projecting point
+#
+# pre-launch:
+# domain
+# hosting
+# analytics
 
 DRAG_FACTOR = 2
 DRAG_FACTOR_3D = 180
@@ -37,7 +43,7 @@ ZOOM_LIMIT_TARGET = 3.0
 UNZOOM_LIMIT = 1/10
 
 # Set false for more speed.
-HIGH_QUALITY = true
+HIGH_QUALITY = false
 
 if HIGH_QUALITY
   FORCE_CANVAS_RENDERER = false
@@ -571,7 +577,8 @@ class Ocicle
       split = 4
 
     @t_renderer.setSize @cw, @ch
-    @t_camera = new THREE.PerspectiveCamera @view3.fov, @cw/@ch, 1, 10000
+    asp = @cw/@ch
+    @t_camera = new THREE.PerspectiveCamera @view3.fov/asp, asp, 1, 10000
     @t_target = new THREE.Vector3 0, 0, 0  # reusable object
     @t_scene = new THREE.Scene()
     @t_projector = new THREE.Projector()
@@ -1127,7 +1134,8 @@ class Ocicle
       @draw_images false, path(t/5), null
 
   point_camera: (view) ->
-    @t_camera.projectionMatrix.makePerspective view.fov, @cw/@ch, 1, 10000
+    asp = @cw/@ch
+    @t_camera.projectionMatrix.makePerspective view.fov/asp, asp, 1, 10000
     phi = ( 90 - view.lat ) * Math.PI / 180
     theta = view.lon * Math.PI / 180
     t = @t_target
@@ -1146,10 +1154,11 @@ class Ocicle
       @t_renderer.render @t_scene, @t_camera
 
       # For the next frame, adjust tile level based on fov.
-      bias = -0.5
+      bias = 0
       proj_h = @t_pano.ts / 2 * Math.tan(@view3.fov * Math.PI / 180 / 2)
       level = Math.floor log2(@ch / proj_h) + bias
       level = clamp level, 0, @t_pano.levels - 1
+      set_text 'level', level
       for i in [0...@t_pano.levels]
         @t_meshes[i].visible = if PANO_DRAW_LOWER_LEVELS then i <= level else i == level
 
