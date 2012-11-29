@@ -311,27 +311,6 @@ class PanoCube extends THREE.Geometry
     @mergeVertices()
 
 
-# storage interface:
-# get: key, (value) -> ...
-# set: key, value, (success) -> ...
-class Storage
-  constructor: (@url) ->
-
-  get: (key, cb) ->
-    simpleXHR 'GET', @url + key, '', (req) ->
-      if req.status == 200
-        cb JSON.parse req.responseText
-      else if req.status == 404
-        cb null
-      else
-        cb false
-
-  set: (key, value, cb) ->
-    value = JSON.stringify value
-    simpleXHR 'PUT', @url + key, value, (req) ->
-      if cb then cb req.status == 200
-
-
 # metadata interface:
 # images, marks
 # images = [{
@@ -347,12 +326,13 @@ class Storage
 #   view: view
 # }]
 class Metadata
-  constructor: (@storage, @client_cb) ->
-    @storage.get 'meta', (value) =>
-      @data = value
-      if @client_cb then @client_cb @
+  constructor: (@data, @js_path) ->
+
   save: (cb) ->
-    @storage.set 'meta', @data, cb
+    value = JSON.stringify @data
+    value = 'window.META=' + value + ';\n'
+    simpleXHR 'PUT', @js_path, value, (req) ->
+      if cb then cb req.status == 200
 
 
 # adapted from https://gist.github.com/771192
@@ -1301,14 +1281,12 @@ on_resize = () ->
   if window.ocicle then window.ocicle.resize()
 
 on_load = () ->
-  # prefetch this so it's in the cache
-  new ImageLoader PAUSE_ICON
+  new ImageLoader PAUSE_ICON   # prefetch this so it's cached
   bkgd_image = new ImageLoader BKGD_IMAGE
-
   on_resize()
-  storage = new Storage '/data/'
-  meta = new Metadata storage, (meta) ->
-    window.ocicle = new Ocicle $('c2'), $('c3'), meta, bkgd_image
+  meta = new Metadata window.META, '/data/meta.js'
+  delete window.META
+  window.ocicle = new Ocicle $('c2'), $('c3'), meta, bkgd_image
 
 window.addEventListener 'resize', on_resize, false
 window.addEventListener 'load', on_load, false

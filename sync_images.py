@@ -5,6 +5,7 @@
 2. add to metadata
 
 fields:
+	src
 	w, h
 	px, py, pw
 	desc
@@ -17,7 +18,9 @@ join = os.path.join
 
 SRCDIR = 'images'
 TILEDIR = 'tiles'
-META = 'data/meta'
+META = 'data/meta.js'
+M_PREFIX = 'window.META='
+M_SUFFIX = ';\n'
 
 CAPTION = 'Iptc.Application2.Caption'
 
@@ -82,7 +85,10 @@ def AddToMeta(meta, attrs):
 
 
 def main():
-	meta = json.load(open(META))
+	meta = open(META).read()
+	assert meta.startswith(M_PREFIX) and meta.endswith(M_SUFFIX)
+	meta = meta[len(M_PREFIX):-len(M_SUFFIX)]
+	meta = json.loads(meta)
 	orig_meta = copy.deepcopy(meta)
 
 	for jpg in os.listdir(SRCDIR):
@@ -93,7 +99,7 @@ def main():
 
 	if meta != orig_meta:
 		os.rename(META, META + '.backup-%d' % time.time())
-		json.dump(meta, open(META, 'w'))
+		open(META, 'w').write(M_PREFIX + json.dumps(meta) + M_SUFFIX)
 
 
 if __name__ == '__main__':
