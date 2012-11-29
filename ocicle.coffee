@@ -17,8 +17,9 @@
 # drop some tiles when no longer on screen
 # compressed textures
 # update ratio
-# fix projectScene bug: gets too much when switched to ||s
-# drag by unprojecting/projecting point
+# fix projectScene bug: subdivide to check
+# make panning more natural
+# zoom around cursor
 #
 # pre-launch:
 # domain
@@ -87,6 +88,25 @@ clamp = (x, min, max) ->
 
 rect_is_outside = (cw, ch, x, y, w, h) ->
   x + w < 0 or y + h < 0 or x > cw or y > ch
+
+rect_intersect = (a, b) ->
+  if a.pw > 0
+    ax1 = a.px; ax2 = a.px + a.pw
+  else
+    ax2 = a.px; ax1 = a.px + a.pw
+  if a.ph > 0
+    ay1 = a.py; ay2 = a.py + a.ph
+  else
+    ay2 = a.py; ay1 = a.py + a.ph
+  if b.pw > 0
+    bx1 = b.px; bx2 = b.px + b.pw
+  else
+    bx2 = b.px; bx1 = b.px + b.pw
+  if b.ph > 0
+    by1 = b.py; by2 = b.py + b.ph
+  else
+    by2 = b.py; by1 = b.py + b.ph
+  ax2 >= bx1 and bx2 >= ax1 and ay2 >= by1 and by2 >= ay1
 
 hexagon = (ctx, x, y, w, h) ->
   o = h / 2 / Math.sqrt(2)
@@ -410,32 +430,32 @@ class ImageLoader
 
 
 class DZImage
-  constructor: (@meta) ->
-    @w = @meta.w
-    @h = @meta.h
-    @min_level = @find_level @meta.ts / 2
+  constructor: (meta) ->
+    {@src, @w, @h, @ts, px, py, pw, @desc, @shape} = meta
+    @min_level = @find_level @ts / 2
     @max_level = @find_level Math.max @w, @h
-    @px = @meta.px
-    @py = @meta.py
-    @pw = @meta.pw
-    @ph = @h * @pw / @w
+    @move px, py
+    @scale pw
+
+  get_meta: () ->
+    return {@src, @w, @h, @ts, @px, @py, @pw, @desc, @shape}
+
+  clone: () ->
+    new DZImage @get_meta()
 
   move: (@px, @py) ->
-    @meta.px = @px
-    @meta.py = @py
 
   scale: (@pw) ->
-    @meta.pw = @pw
     @ph = @h * @pw / @w
 
   get_at_level: (level, x, y) ->
-    'tiles/' + @meta.src + '/' + level + '/' + x + '_' + y + '.jpg'
+    'tiles/' + @src + '/' + level + '/' + x + '_' + y + '.jpg'
 
   find_level: (dim) ->
     Math.ceil log2 dim
 
   render_onto_ctx: (ctx, tile_cache, x, y, w, h, redraw) ->
-    tile_size = @meta.ts
+    tile_size = @ts
 
     level = 1 + @find_level Math.max w, h
     level = clamp level, @min_level, @max_level
@@ -516,11 +536,11 @@ class View3
 
 class Ocicle
   constructor: (@c2, @c3, @meta, @bkgd_image) ->
-    @editmode = false
+    @edit_mode = false
 
     add_event = (events, method) =>
       edit_switch = () =>
-        interaction = if @editmode then interaction_edit else interaction_normal
+        interaction = if @edit_mode then interaction_edit else interaction_normal
         interaction[method].apply @, arguments
       for event in events
         @c2.addEventListener event, edit_switch, true
@@ -621,26 +641,28 @@ class Ocicle
 
   edit: () ->
     editlink = $('editlink')
-    if @editmode
+    if @edit_mode
       editlink.style.background = 'red'
+      @meta.data.images = (i.get_meta() for i in @images)
       @meta.save (success) ->
         if success then editlink.style.background = 'inherit'
     else
-      @editmode = true
+      @edit_mode = true
+      @edit_images = []
       editlink.src = SAVE_ICON
       $('editstuff').style.display = 'block'
 
       desc = $('desc')
       desc.contentEditable = true
       desc.addEventListener 'input', () =>
-        if @highlight_image
-          @highlight_image.meta.desc = desc.innerText
+        if @edit_images.length == 1
+          @edit_images[0].desc = desc.innerText
 
       shape = $('shapeselect')
       shape.addEventListener 'change', () =>
-        if @highlight_image
-          @highlight_image.meta.shape = parseInt shape.value
-          @redraw()
+        for i in @edit_images
+          i.shape = parseInt shape.value
+        @redraw()
 
       editmark = $('editmark')
       editmark.addEventListener 'change', () =>
@@ -661,35 +683,29 @@ class Ocicle
 
       delbutton = $('delete')
       delbutton.addEventListener 'click', () =>
-        return unless @highlight_image
-        idx = @images.indexOf @highlight_image
-        midx = @meta.data.images.indexOf @highlight_image.meta
-        if idx < 0 or midx < 0
-          return console.log "couldn't find images: " + idx + ',' + midx
-        @images.splice idx, 1
-        @meta.data.images.splice midx, 1
+        for i in @edit_images
+          idx = @images.indexOf i
+          if idx < 0
+            return console.log "couldn't find images: " + idx + ',' + midx
+          @images.splice idx, 1
+        @edit_images = []
         @redraw()
 
       reorder = (pos) =>
-        return unless @highlight_image
-        idx = @images.indexOf @highlight_image
-        midx = @meta.data.images.indexOf @highlight_image.meta
-        if idx != midx or idx < 0
-          return console.log "couldn't find images: " + idx + ',' + midx
+        return unless @edit_images.length == 1
+        # TODO: allow reordering multiple images at once
+        idx = @images.indexOf @edit_images[0]
+        if idx < 0
+          return console.log "couldn't find image: " + idx
         [img] = @images.splice idx, 1
-        [mimg] = @meta.data.images.splice idx, 1
         if pos == 'first'
           @images.unshift img
-          @meta.data.images.unshift mimg
         else if pos == 'last'
           @images.push img
-          @meta.data.images.push mimg
         else if pos == 'up'
           @images.splice idx-1, 0, img
-          @meta.data.images.splice idx-1, 0, mimg
         else if pos == 'down'
           @images.splice idx+1, 0, img
-          @meta.data.images.splice idx+1, 0, mimg
         @redraw()
 
       $('order_first').addEventListener 'click', () -> reorder 'first'
@@ -710,10 +726,10 @@ class Ocicle
     y = (y - @view.pan_y) / @view.scale
     for i in @images
       if x >= i.px and y >= i.py and x <= i.px + i.pw and y <= i.py + i.ph
-        xr = (x - i.px) / i.pw * 6
-        yr = (y - i.py) / i.ph * 6
-        xa = if xr < 1 then -1 else if xr > 5 then 1 else 0
-        ya = if yr < 1 then -1 else if yr > 5 then 1 else 0
+        xr = (x - i.px) / i.pw * 8
+        yr = (y - i.py) / i.ph * 8
+        xa = if xr < 1 then -1 else if xr > 7 then 1 else 0
+        ya = if yr < 1 then -1 else if yr > 7 then 1 else 0
         return [i, xa, ya]
     return [null, 0, 0]
 
@@ -778,54 +794,87 @@ class Ocicle
 
   interaction_edit =
     # drag states:
-    #  1: pan
-    #  2: drag/resize image
+    #  11: left click on already selected image  (either remove or drag)
+    #  12: left click on image, drag
+    #  13: left click on background (unselect, then select box)
+    #  2: middle click (pan)
+    #  3: right click (resize)
     mousedown: (e) ->
       e.preventDefault()
       @stop_animation()
       @play false
       @drag_screen_x = e.screenX
       @drag_screen_y = e.screenY
-      [@drag_img, xa, ya] = @find_containing_image_client e.clientX, e.clientY
-      if @drag_img and e.button == 0
-        @drag_state = 2
-        @drag_area = [xa, ya]
-        @drag_px = @drag_img.px
-        @drag_py = @drag_img.py
-        @drag_pw = @drag_img.pw
-      else
-        @drag_state = 1
+      if e.button == 0
+        @drag_base_images = (i.clone() for i in @images)
+        [@drag_img, xa, ya] = @find_containing_image_client e.clientX, e.clientY
+        if @drag_img
+          @drag_area = [xa, ya]
+          idx = @edit_images.indexOf @drag_img
+          if idx < 0
+            @edit_images.push @drag_img
+            # Jump right into dragging state so that we don't remove this image
+            # on mouseup.
+            @drag_state = 12
+          else
+            @drag_state = 11
+          # At this point, @drag_img must be in @edit_images.
+        else
+          @edit_images = []
+          @drag_state = 13
+          @drag_box =
+            px: (e.clientX - @view.pan_x) / @view.scale
+            py: (e.clientY - @view.pan_y) / @view.scale
+            pw: 0
+            ph: 0
+      else if e.button == 1
         @drag_pan_x = @view.pan_x
         @drag_pan_y = @view.pan_y
+        @drag_state = 2
+      else if e.button == 2
+        @drag_base_images = (i.clone() for i in @images)
+        @drag_client_x = e.clientX
+        @drag_client_y = e.clientY
+        @drag_state = 3
+      @redraw()
 
     mousemove: (e) ->
-      if @drag_state == 0 then return
+      return if @drag_state == 0
       move_x = e.screenX - @drag_screen_x
       move_y = e.screenY - @drag_screen_y
-      if @drag_state == 1  # pan
-        @view.pan_x = @drag_pan_x + DRAG_FACTOR * move_x
-        @view.pan_y = @drag_pan_y + DRAG_FACTOR * move_y
-      else if @drag_state == 2  # drag/resize image
+
+      if @drag_state == 11
+        if Math.abs(move_x) > DRAG_THRESHOLD or Math.abs(move_y) > DRAG_THRESHOLD
+          @drag_state = 12
+
+      if @drag_state == 12
+        unless @edit_images
+          return console.log "how'd we get here with no @edit_images?"
+        unless @drag_img in @edit_images
+          return console.log "shouldn't @drag_img be in @edit_images?"
+        orig_drag = @drag_base_images[@images.indexOf @drag_img]
         [xa, ya] = @drag_area
         aspect = @drag_img.w / @drag_img.h
-        drag_ph = @drag_pw / aspect
+        # Note: Dragging the edges only moves the edge of the clicked image.
+        # Dragging the center moves all selected images. This is pretty
+        # unintuitive :(
         if xa == 1  # right
-          x = @snap @drag_px + @drag_pw + move_x / @view.scale
-          @drag_img.scale x - @drag_px
+          x = @snap orig_drag.px + orig_drag.pw + move_x / @view.scale
+          @drag_img.scale x - orig_drag.px
         else if xa == -1  # left
-          x = @snap @drag_px + move_x / @view.scale
-          @drag_img.move x, @drag_py
-          @drag_img.scale @drag_pw + @drag_px - x
+          x = @snap orig_drag.px + move_x / @view.scale
+          @drag_img.move x, orig_drag.py
+          @drag_img.scale orig_drag.pw + orig_drag.px - x
         else if ya == 1  # bottom
-          y = @snap @drag_py + drag_ph + move_y / @view.scale
-          @drag_img.scale aspect * (y - @drag_py)
+          y = @snap orig_drag.py + orig_drag.ph + move_y / @view.scale
+          @drag_img.scale aspect * (y - orig_drag.py)
         else if ya == -1  # top
-          y = @snap @drag_py + move_y / @view.scale
-          @drag_img.move @drag_px, y
-          @drag_img.scale aspect * (drag_ph + @drag_py - y)
-        else  # center
-          x = @drag_px + move_x / @view.scale
-          y = @drag_py + move_y / @view.scale
+          y = @snap orig_drag.py + move_y / @view.scale
+          @drag_img.move orig_drag.px, y
+          @drag_img.scale aspect * (orig_drag.ph + orig_drag.py - y)
+        else  # center (this moves all selected images)
+          x = orig_drag.px + move_x / @view.scale
+          y = orig_drag.py + move_y / @view.scale
           snap_and_dist = (w, h) =>
             sx = @snap x + w
             sy = @snap y + h
@@ -834,15 +883,48 @@ class Ocicle
             [sx - w, sy - h, dx*dx+dy*dy]
           pts = [
             snap_and_dist 0, 0
-            snap_and_dist @drag_pw, 0
-            snap_and_dist 0, drag_ph
-            snap_and_dist @drag_pw, drag_ph
+            snap_and_dist orig_drag.pw, 0
+            snap_and_dist 0, orig_drag.ph
+            snap_and_dist orig_drag.pw, orig_drag.ph
           ].sort (a, b) -> a[2] - b[2]
-          @drag_img.move pts[0][0], pts[0][1]
+          dx = pts[0][0] - orig_drag.px
+          dy = pts[0][1] - orig_drag.py
+
+          for i in @edit_images
+            oi = @drag_base_images[@images.indexOf i]
+            i.move oi.px + dx, oi.py + dy
+
+      else if @drag_state == 13  # select box
+        @drag_box.pw = move_x / @view.scale
+        @drag_box.ph = move_y / @view.scale
+        @edit_images = (i for i in @images when rect_intersect @drag_box, i)
+
+      else if @drag_state == 2  # pan
+        @view.pan_x = @drag_pan_x + move_x
+        @view.pan_y = @drag_pan_y + move_y
+
+      else if @drag_state == 3  # resize images
+        factor = Math.pow(1.005, move_x + move_y)
+        cx = (@drag_client_x - @view.pan_x) / @view.scale
+        cy = (@drag_client_y - @view.pan_y) / @view.scale
+        for i in @edit_images
+          {px, py, pw} = @drag_base_images[@images.indexOf i]
+          i.move factor * (px - cx) + cx, factor * (py - cy) + cy
+          i.scale pw * factor
 
       @redraw()
 
     mouseup: (e) ->
+      if @drag_state == 11
+        # Remove from selected set. This should always be in the set, but check
+        # anyway to be defensive.
+        idx = @edit_images.indexOf @drag_img
+        if idx >= 0
+          @edit_images.splice idx, 1
+          @redraw()
+      if @drag_box
+        @drag_box = null
+        @redraw()
       @drag_state = 0
 
     mousewheel: interaction_normal.mousewheel
@@ -1015,11 +1097,9 @@ class Ocicle
       if i.pw * @view.scale / @cw < 0.5 and i.ph * @view.scale / @ch < 0.5
         i = null
     # update description
-    desc = (i?.meta.desc or '').replace /\n$/, ''
+    desc = (i?.desc or '').replace /\n$/, ''
     set_text 'desc', desc
     $('desc').style.lineHeight = if desc.search('\n') > 0 then 1.1 else 2.2
-    if @editmode
-      $('shapeselect').value = i?.meta.shape
     @highlight_image = i
 
   update_fps: () ->
@@ -1057,6 +1137,16 @@ class Ocicle
     ctx.strokeStyle = 'hsl(210,5%,25%)'
     ctx.stroke()
 
+  draw_drag_box: () ->
+    ctx = @ctx2
+    x = @drag_box.px * @view.scale + @view.pan_x
+    y = @drag_box.py * @view.scale + @view.pan_y
+    w = @drag_box.pw * @view.scale
+    h = @drag_box.ph * @view.scale
+    ctx.lineWidth = 3
+    ctx.strokeStyle = 'rgba(0,0,200,0.5)'
+    ctx.strokeRect x, y, w, h
+
   draw_images: (really, view, redraw) ->
     max_ratio = 0
     ctx = @ctx2
@@ -1083,9 +1173,12 @@ class Ocicle
         ctx.lineWidth = 2 * fw
         if i is @highlight_image
           ctx.shadowOffsetX = ctx.shadowOffsetY = fw
+        if @edit_mode and i in @edit_images
+          ctx.strokeStyle = 'hsl(30,50%,50%)'
+          ctx.lineWidth *= 2
 
         ctx.beginPath()
-        switch i.meta.shape or RECT
+        switch i.shape or RECT
           when RECT
             ctx.rect x, y, w, h
           when CIRCLE
@@ -1172,12 +1265,13 @@ class Ocicle
     else
       @draw_background()
       @update_highlight_image()
-      if @editmode and @gridsize then @draw_grid()
+      if @edit_mode and @gridsize then @draw_grid()
 
       max_ratio = @draw_images true, @view, @redraw
 
-      if @editmode
+      if @edit_mode
         @draw_links()
+        if @drag_box then @draw_drag_box()
 
       @set_ratio_text max_ratio
 
