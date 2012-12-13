@@ -1278,14 +1278,15 @@ class Ocicle
         @set_three_d()
         if @three_d
           @setup_pano @pano_image.pano
+          @view3.fov = @fov_target = FOV_OUT
+          @view3.lat = 0
+          @view3.lon = 90
           @do_zoom_3d @fov_target / FOV_INIT
         else
           coords = @center_around_image @pano_image
           @slide_to coords if coords
     else
       @between_views = false
-
-    return
 
   redraw: () =>
     unless @request_id
