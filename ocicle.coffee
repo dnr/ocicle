@@ -207,7 +207,7 @@ compute_flying_path = (cw, ch, start, end) ->
   return if a == 0
   total_s = parabola_len a, b, 1
 
-  (t) ->
+  (t, out) ->
     # Move along the parabola at constant velocity.
     t = inverse_parabola_len a, b, t * total_s
 
@@ -215,10 +215,10 @@ compute_flying_path = (cw, ch, start, end) ->
     gx = start_gx + t * dist * Math.cos theta
     gy = start_gy + t * dist * Math.sin theta
 
-    scale = 1 / gz
-    pan_x = cw2 - gx / gz
-    pan_y = ch2 - gy / gz
-    new View scale, pan_x, pan_y
+    out.scale = 1 / gz
+    out.pan_x = cw2 - gx / gz
+    out.pan_y = ch2 - gy / gz
+    out
 
 
 # e: THREE.RenderableFace4
@@ -955,8 +955,9 @@ class Ocicle
 
   center_around_image: (i) ->
     return unless i
-    @view_t.scale = Math.min (@cw - CENTER_BORDER) / i.pw,
-                             (@ch - CENTER_BORDER) / i.ph
+    scale = Math.min (@cw - CENTER_BORDER) / i.pw,
+                     (@ch - CENTER_BORDER) / i.ph
+    @view_t.scale = scale
     @view_t.pan_x = @cw2 - (i.px + i.pw / 2) * scale
     @view_t.pan_y = @ch2 - (i.py + i.ph / 2) * scale
     @view_t
@@ -1007,7 +1008,7 @@ class Ocicle
     if path
       @prefetch_path path
       update = (t) =>
-        @view = path t
+        path t, @view
         @scale_target = @view.scale
       @animate update, ms
 
@@ -1212,7 +1213,7 @@ class Ocicle
 
   prefetch_path: (path) ->
     for t in [0..5]
-      @draw_images false, path(t/5), null
+      @draw_images false, path(t/5, @view_t), null
 
   point_camera: (view) ->
     asp = @cw/@ch
