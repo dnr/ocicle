@@ -22,8 +22,7 @@
 # zoom around cursor
 #
 # pre-launch:
-# domain
-# hosting
+# finish content
 # analytics
 
 DRAG_FACTOR = 2
@@ -42,6 +41,10 @@ DEBUG_BORDERS = false
 ZOOM_LIMIT_LIMIT = 3.3
 ZOOM_LIMIT_TARGET = 3.0
 UNZOOM_LIMIT = 1/10
+FOV_MIN = 4
+FOV_INIT = 75
+FOV_OUT = 110
+FOV_MAX = 120
 
 # Set false for more speed.
 HIGH_QUALITY = false
@@ -411,14 +414,14 @@ class ImageLoader
 
 class DZImage
   constructor: (meta) ->
-    {@src, @w, @h, @ts, px, py, pw, @desc, @shape} = meta
+    {@src, @w, @h, @ts, px, py, pw, @desc, @shape, @pano} = meta
     @min_level = @find_level @ts / 2
     @max_level = @find_level Math.max @w, @h
     @move px, py
     @scale pw
 
   get_meta: () ->
-    return {@src, @w, @h, @ts, @px, @py, @pw, @desc, @shape}
+    return {@src, @w, @h, @ts, @px, @py, @pw, @desc, @shape, @pano}
 
   clone: () ->
     new DZImage @get_meta()
@@ -488,7 +491,7 @@ class DZImage
 # covers the face.
 class DZPano
   constructor: (@meta) ->
-    {@name, size, @ts} = @meta
+    {@src, size, @ts} = @meta
     tiles = size / @ts
     if tiles != Math.floor tiles or tiles & (tiles - 1)
       console.warn "Cube face size #{size} is not POT times tile size #{@ts}"
@@ -498,7 +501,7 @@ class DZPano
 
   get_url: (level, face, ix, iy) =>
     level = @base_level + level
-    "tiles/#{@name}_#{face}/#{level}/#{ix}_#{iy}.jpg"
+    "tiles/#{@src}_#{face}/#{level}/#{ix}_#{iy}.jpg"
 
 
 class View
@@ -536,7 +539,7 @@ class Ocicle
     @setup_bookmarks()
     @tile_cache = new LruCache TILE_CACHE_SIZE
 
-    @fov_target = 50
+    @fov_target = FOV_OUT
     @view3 = new View3 @fov_target, 0, 90
     @view3_t = new View3  # reusable object
     @three_d = false
@@ -562,41 +565,33 @@ class Ocicle
 
     @ctx2 = @c2.getContext '2d'
 
-    try
-      if FORCE_CANVAS_RENDERER then throw 'asdf'
-      @t_renderer = new THREE.WebGLRenderer {canvas: @c3}
-      set_text 'renderer_name', 'webgl'
-      split = 0
-    catch _
-      console.log "falling back to CanvasRenderer"
+    unless @t_renderer  # one-time stuff
       @t_renderer = new THREE.CanvasRenderer {canvas: @c3}
       set_text 'renderer_name', 'sw'
-      # Always split into at least 16ths for the canvas renderer,
-      # to cover up affine mapping artifacts. 3 isn't enough, 5 is
-      # too slow, 4 works well.
-      split = 4
+      @t_target = new THREE.Vector3 0, 0, 0  # reusable object
+      @t_camera = new THREE.PerspectiveCamera
+      @t_projector = new THREE.Projector
 
     @t_renderer.setSize @cw, @ch
-    asp = @cw/@ch
-    @t_camera = new THREE.PerspectiveCamera @view3.fov/asp, asp, 1, 10000
-    @t_target = new THREE.Vector3 0, 0, 0  # reusable object
-    @t_scene = new THREE.Scene()
-    @t_projector = new THREE.Projector()
+    @point_camera @view3
 
-    @t_pano = new DZPano
-      name: 'nativity_pano'
-      size: 7360
-      ts: 460
-    max_aniso = @t_renderer.getMaxAnisotropy()
-    @t_meshes = for level in [0...@t_pano.levels]
-      size = 100 - level
-      geometry = new PanoCube size, split, level, @t_pano.get_url, max_aniso, @redraw
-      mesh = new THREE.Mesh geometry, new THREE.MeshFaceMaterial()
-      mesh.scale.x = -1
-      mesh.visible = false
-      @t_scene.add mesh
-      mesh
-
+  setup_pano: (pano_meta) ->
+    if @t_pano?.src != pano_meta.src
+      @t_pano = new DZPano pano_meta
+      max_aniso = @t_renderer.getMaxAnisotropy()
+      @t_scene = new THREE.Scene()
+      @t_meshes = for level in [0...@t_pano.levels]
+        size = 100 - level
+        # Always split into at least 16ths for the canvas renderer,
+        # to cover up affine mapping artifacts. 3 isn't enough, 5 is
+        # too slow, 4 works well.
+        # TODO: fix magic 4
+        geometry = new PanoCube size, 4, level, @t_pano.get_url, max_aniso, @redraw
+        mesh = new THREE.Mesh geometry, new THREE.MeshFaceMaterial
+        mesh.scale.x = -1
+        mesh.visible = false
+        @t_scene.add mesh
+        mesh
     return
 
   setup_bookmarks: () ->
@@ -976,7 +971,7 @@ class Ocicle
   do_zoom_3d: (factor, client_x, client_y) ->
     # TODO: use clientxy
     fov = @fov_target / factor
-    @fov_target = clamp fov, 4, 120
+    @fov_target = clamp fov, FOV_MIN, FOV_MAX
     @view3_t.fov = @fov_target
     @view3_t.lat = @view3.lat
     @view3_t.lon = @view3.lon
@@ -1023,11 +1018,12 @@ class Ocicle
       t = Math.min 1, (Date.now() - start) / ms
       update t
       @render()
-      if check_limit and @hit_limit
-        @scale_target = @view.scale
-        @do_zoom @hit_limit, @cw2, @ch2
-      else
-        @request_id = if t < 1 then requestFrame frame, @c2
+      unless @request_id  # maybe render set up a new animation
+        if check_limit and @hit_limit
+          @scale_target = @view.scale
+          @do_zoom @hit_limit, @cw2, @ch2
+        else
+          @request_id = if t < 1 then requestFrame frame
     frame()
 
 
@@ -1081,6 +1077,15 @@ class Ocicle
     set_text 'desc', desc
     $('desc').style.lineHeight = if desc.search('\n') > 0 then 1.1 else 2.2
     @highlight_image = i
+    # also check if we're inside it to set the pano image
+    if (i and i.pano and
+        i.px * @view.scale + @view.pan_x < 0 and
+        (i.px + i.pw) * @view.scale + @view.pan_x > @cw and
+        i.py * @view.scale + @view.pan_y < 0 and
+        (i.py + i.ph) * @view.scale + @view.pan_y > @ch)
+      @pano_image = i
+    else
+      @pano_image = null
 
   update_fps: () ->
     now = Date.now()
@@ -1222,25 +1227,29 @@ class Ocicle
     @update_fps()
 
     if @three_d
-      # Render what we have now.
-      @point_camera @view3
-      @t_renderer.render @t_scene, @t_camera
+      if @t_scene
+        # Render what we have now.
+        @point_camera @view3
+        @t_renderer.render @t_scene, @t_camera
 
-      # For the next frame, adjust tile level based on fov.
-      bias = 0
-      proj_h = @t_pano.ts / 2 * Math.tan(@view3.fov * Math.PI / 180 / 2)
-      level = Math.floor log2(@ch / proj_h) + bias
-      level = clamp level, 0, @t_pano.levels - 1
-      set_text 'level', level
-      for i in [0...@t_pano.levels]
-        @t_meshes[i].visible = if PANO_DRAW_LOWER_LEVELS then i <= level else i == level
+        # For the next frame, adjust tile level based on fov.
+        bias = 0
+        proj_h = @t_pano.ts / 2 * Math.tan(@view3.fov * Math.PI / 180 / 2)
+        level = Math.floor log2(@ch / proj_h) + bias
+        level = clamp level, 0, @t_pano.levels - 1
+        set_text 'level', level
+        for i in [0...@t_pano.levels]
+          vis = if PANO_DRAW_LOWER_LEVELS then i <= level else i == level
+          @t_meshes[i].visible = vis
 
-      # Project to figure out what's visible, then fetch those tiles.
-      data = @t_projector.projectScene @t_scene, @t_camera, false, false, true
-      for e in data.elements
-        continue unless e instanceof THREE.RenderableFace4
-        unless is_off_screen e
-          e.material._ocicle_loader.load()
+        # Project to figure out what's visible, then fetch those tiles.
+        data = @t_projector.projectScene @t_scene, @t_camera, false, false, true
+        for e in data.elements
+          continue unless e instanceof THREE.RenderableFace4
+          unless is_off_screen e
+            e.material._ocicle_loader.load()
+
+      switch_views = @view3.fov > FOV_OUT
 
     else
       @draw_background()
@@ -1260,6 +1269,21 @@ class Ocicle
         @hit_limit = max_ratio * ZOOM_LIMIT_TARGET
       else if @view.scale < UNZOOM_LIMIT
         @hit_limit = 1.05
+
+      switch_views = @pano_image
+
+    if switch_views
+      if not @between_views
+        @between_views = true
+        @set_three_d()
+        if @three_d
+          @setup_pano @pano_image.pano
+          @do_zoom_3d @fov_target / FOV_INIT
+        else
+          coords = @center_around_image @pano_image
+          @slide_to coords if coords
+    else
+      @between_views = false
 
     return
 
