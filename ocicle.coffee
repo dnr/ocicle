@@ -548,7 +548,8 @@ class Ocicle
 
     @view = new View UNZOOM_LIMIT, @cw2, @ch2
 
-    @view_t = new View 1, 0, 0
+    i = @meta.data.initial
+    @view_t = new View i.scale, i.pan_x, i.pan_y
     @slide_to @view_t, FLY_MS
 
 
@@ -954,11 +955,11 @@ class Ocicle
 
   center_around_image: (i) ->
     return unless i
-    scale = Math.min (@cw - CENTER_BORDER) / i.pw,
-                     (@ch - CENTER_BORDER) / i.ph
-    pan_x = @cw2 - (i.px + i.pw / 2) * scale
-    pan_y = @ch2 - (i.py + i.ph / 2) * scale
-    new View scale, pan_x, pan_y
+    @view_t.scale = Math.min (@cw - CENTER_BORDER) / i.pw,
+                             (@ch - CENTER_BORDER) / i.ph
+    @view_t.pan_x = @cw2 - (i.px + i.pw / 2) * scale
+    @view_t.pan_y = @ch2 - (i.py + i.ph / 2) * scale
+    @view_t
 
   do_zoom: (factor, client_x, client_y) ->
     # We don't need to subtract getBoundingClientRect().left/top because
