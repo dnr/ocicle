@@ -540,16 +540,16 @@ class Ocicle
     @tile_cache = new LruCache TILE_CACHE_SIZE
 
     @fov_target = FOV_OUT
-    @view3 = new View3 @fov_target, 0, 90
+    @view3 = new View3 90, 0, 0
     @view3_t = new View3  # reusable object
     @three_d = false
 
     @setup_contexts()
 
-    @view = new View 1/10000, @cw2, @ch2
-    @view_t = new View  # reusable object
+    @view = new View UNZOOM_LIMIT, @cw2, @ch2
 
-    @slide_to (new View 1, 0, 0), FLY_MS, false
+    @view_t = new View 1, 0, 0
+    @slide_to @view_t, FLY_MS
 
 
   setup_contexts: () ->
@@ -567,7 +567,6 @@ class Ocicle
 
     unless @t_renderer  # one-time stuff
       @t_renderer = new THREE.CanvasRenderer {canvas: @c3}
-      set_text 'renderer_name', 'sw'
       @t_target = new THREE.Vector3 0, 0, 0  # reusable object
       @t_camera = new THREE.PerspectiveCamera
       @t_projector = new THREE.Projector
@@ -964,9 +963,12 @@ class Ocicle
     # we know the canvas is positioned against the top left corner of
     # the window.
     @scale_target *= factor
-    pan_x = client_x - @scale_target / @view.scale * (client_x - @view.pan_x)
-    pan_y = client_y - @scale_target / @view.scale * (client_y - @view.pan_y)
-    @slide_to new View @scale_target, pan_x, pan_y
+    @view_t.pan_x = client_x - (
+      @scale_target / @view.scale * (client_x - @view.pan_x))
+    @view_t.pan_y = client_y - (
+      @scale_target / @view.scale * (client_y - @view.pan_y))
+    @view_t.scale = @scale_target
+    @slide_to @view_t
 
   do_zoom_3d: (factor, client_x, client_y) ->
     # TODO: use clientxy
@@ -977,7 +979,7 @@ class Ocicle
     @view3_t.lon = @view3.lon
     @slide_to_3d @view3_t
 
-  slide_to: (end, ms=SLIDE_MS, check_limit=true) ->
+  slide_to: (end, ms=SLIDE_MS) ->
     @scale_target = end.scale
     start = @view.clone()
     update = (t) =>
@@ -985,9 +987,9 @@ class Ocicle
       @view.scale = start.scale * (1-t) + end.scale * t
       @view.pan_x = start.pan_x * (1-t) + end.pan_x * t
       @view.pan_y = start.pan_y * (1-t) + end.pan_y * t
-    @animate update, ms, check_limit
+    @animate update, ms
 
-  slide_to_3d: (end, ms=SLIDE_MS, check_limit=true) ->
+  slide_to_3d: (end, ms=SLIDE_MS) ->
     @fov_target = end.fov
     start = @view3.clone()
     update = (t) =>
@@ -995,23 +997,23 @@ class Ocicle
       @view3.fov = start.fov * (1-t) + end.fov * t
       @view3.lat = start.lat * (1-t) + end.lat * t
       @view3.lon = start.lon * (1-t) + end.lon * t
-    @animate update, ms, check_limit
+    @animate update, ms
 
-  fly_to: (end, ms=FLY_MS, check_limit=false) ->
+  fly_to: (end, ms=FLY_MS) ->
     path = compute_flying_path(@cw, @ch, @view, end)
     if path
       @prefetch_path path
       update = (t) =>
         @view = path t
         @scale_target = @view.scale
-      @animate update, ms, check_limit
+      @animate update, ms
 
   stop_animation: () ->
     if @request_id
       cancelFrame @request_id
       @request_id = null
 
-  animate: (update, ms, check_limit) ->
+  animate: (update, ms) ->
     @stop_animation()
     start = Date.now() - 5
     frame = () =>
@@ -1019,21 +1021,14 @@ class Ocicle
       update t
       @render()
       unless @request_id  # maybe render set up a new animation
-        if check_limit and @hit_limit
-          @scale_target = @view.scale
-          @do_zoom @hit_limit, @cw2, @ch2
-        else
-          @request_id = if t < 1 then requestFrame frame
+        @request_id = if t < 1 then requestFrame frame
     frame()
 
-
-  set_three_d: (val) ->
+  toggle_three_d: (val) ->
     if val is undefined then val = not @three_d
     @three_d = val
     @c2.style.display = if @three_d then 'none' else 'block'
     @c3.style.display = if @three_d then 'block' else 'none'
-    @redraw()
-
 
   draw_background: () ->
     if not @bkgd_image.complete
@@ -1094,9 +1089,14 @@ class Ocicle
     @fps = (1000 / ms + @fps * 9) / 10
     set_text 'fps', @fps.toFixed 0
     @last_now = now
-    #set_text 'zoom', log2(@view.scale).toFixed 1
     set_text 'tiles', ImageLoader.stats()
-    set_text 'fov', @view3.fov.toFixed 0
+    set_text 'vs', @view.scale.toPrecision 4
+    set_text 'vx', @view.pan_x.toFixed 0
+    set_text 'vy', @view.pan_y.toFixed 0
+    v3 = @view3.lat.toFixed 0
+    v3 += '/' + @view3.lon.toFixed 0
+    v3 += '/' + @view3.fov.toFixed 0
+    set_text 'v3', v3
 
   snap: (x) ->
     if @gridsize then @gridsize * Math.round x / @gridsize else x
@@ -1214,8 +1214,8 @@ class Ocicle
   point_camera: (view) ->
     asp = @cw/@ch
     @t_camera.projectionMatrix.makePerspective view.fov/asp, asp, 1, 10000
-    phi = ( 90 - view.lat ) * Math.PI / 180
-    theta = view.lon * Math.PI / 180
+    phi = (90 - view.lat) * Math.PI / 180
+    theta = (view.lon + 90) * Math.PI / 180
     t = @t_target
     t.x = 50 * Math.sin(phi) * Math.cos(theta)
     t.y = 50 * Math.cos(phi)
@@ -1264,29 +1264,32 @@ class Ocicle
 
       @set_ratio_text max_ratio
 
-      @hit_limit = false
-      if max_ratio > 0 and max_ratio < 1 / ZOOM_LIMIT_LIMIT
-        @hit_limit = max_ratio * ZOOM_LIMIT_TARGET
-      else if @view.scale < UNZOOM_LIMIT
-        @hit_limit = 1.05
-
       switch_views = @pano_image
 
     if switch_views
       if not @between_views
         @between_views = true
-        @set_three_d()
+        @toggle_three_d()
         if @three_d
-          @setup_pano @pano_image.pano
+          pano = @pano_image.pano
+          @setup_pano pano
           @view3.fov = @fov_target = FOV_OUT
-          @view3.lat = 0
-          @view3.lon = 90
-          @do_zoom_3d @fov_target / FOV_INIT
+          @view3.lat = pano.lat
+          @view3.lon = pano.lon
+          @do_zoom_3d @fov_target / pano.fov
         else
           coords = @center_around_image @pano_image
           @slide_to coords if coords
     else
       @between_views = false
+
+      # handle 2d limit stuff
+      if max_ratio > 0 and max_ratio < 1 / ZOOM_LIMIT_LIMIT
+        @scale_target = @view.scale
+        @do_zoom max_ratio * ZOOM_LIMIT_TARGET, @cw2, @ch2
+      else if @view.scale < UNZOOM_LIMIT
+        @scale_target = @view.scale
+        @do_zoom 1.05, @cw2, @ch2
 
   redraw: () =>
     unless @request_id
