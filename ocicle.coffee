@@ -698,7 +698,9 @@ class Ocicle
   find_containing_image_canvas: (x, y) ->
     x = (x - @view.pan_x) / @view.scale
     y = (y - @view.pan_y) / @view.scale
-    for i in @images
+    idx = @images.length
+    while --idx >= 0
+      i = @images[idx]
       if x >= i.px and y >= i.py and x <= i.px + i.pw and y <= i.py + i.ph
         xr = (x - i.px) / i.pw * 8
         yr = (y - i.py) / i.ph * 8
