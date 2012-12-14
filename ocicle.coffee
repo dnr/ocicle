@@ -1019,20 +1019,20 @@ class Ocicle
       update = (t) =>
         path t, @view
         @scale_target = @view.scale
-      @animate update, ms
+      @animate update, ms, true
 
   stop_animation: () ->
     if @request_id
       cancelFrame @request_id
       @request_id = null
 
-  animate: (update, ms) ->
+  animate: (update, ms, skip_limits) ->
     @stop_animation()
     start = Date.now() - 5
     frame = () =>
       t = Math.min 1, (Date.now() - start) / ms
       update t
-      @render()
+      @render skip_limits
       unless @request_id  # maybe render set up a new animation
         @request_id = if t < 1 then requestFrame frame
     frame()
@@ -1236,7 +1236,7 @@ class Ocicle
     t.z = 50 * Math.sin(phi) * Math.sin(theta)
     @t_camera.lookAt t
 
-  render: () ->
+  render: (skip_limits) ->
     @request_id = null
     @update_fps()
 
@@ -1298,12 +1298,13 @@ class Ocicle
       @between_views = false
 
       # handle 2d limit stuff
-      if max_ratio > 0 and max_ratio < 1 / ZOOM_LIMIT_LIMIT
-        @scale_target = @view.scale
-        @do_zoom max_ratio * ZOOM_LIMIT_TARGET, @cw2, @ch2
-      else if @view.scale < UNZOOM_LIMIT
-        @scale_target = @view.scale
-        @do_zoom 1.05, @cw2, @ch2
+      unless skip_limits
+        if max_ratio > 0 and max_ratio < 1 / ZOOM_LIMIT_LIMIT
+          @scale_target = @view.scale
+          @do_zoom max_ratio * ZOOM_LIMIT_TARGET, @cw2, @ch2
+        else if @view.scale < UNZOOM_LIMIT
+          @scale_target = @view.scale
+          @do_zoom 1.05, @cw2, @ch2
 
   redraw: () =>
     unless @request_id
