@@ -547,10 +547,9 @@ class Ocicle
     @setup_contexts()
 
     @view = new View UNZOOM_LIMIT, @cw2, @ch2
+    @view_t = new View  # reusable object
 
-    i = @meta.data.initial
-    @view_t = new View i.scale, i.pan_x, i.pan_y
-    @slide_to @view_t, FLY_MS
+    @slide_to @find_mark('home').view, FLY_MS
 
 
   setup_contexts: () ->
