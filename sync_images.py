@@ -12,7 +12,7 @@ fields:
 	shape
 """
 
-import os, subprocess, json, time, random, copy, pyexiv2
+import sys, os, subprocess, json, time, random, copy, pyexiv2
 import xml.dom.minidom
 join = os.path.join
 
@@ -45,7 +45,7 @@ def ReadExif(fn):
 	md.read()
 	caption = md.get(CAPTION, None)
 	if caption:
-		yield 'desc', caption.value[0]
+		yield 'desc', caption.value[0].decode('utf-8')
 
 
 def Newer(a, b):
@@ -65,7 +65,7 @@ def MakeTiles(base):
 		args = ['DeepZoomTiler', '-quality', '0.9', '-s', '-o', TILEDIR, jpgpath]
 		subprocess.check_call(args)
 	attrs = ReadDzXml(xmlpath)
-	attrs['src'] = base
+	attrs['src'] = unicode(base)
 	attrs.update(ReadExif(jpgpath))
 	return attrs
 
@@ -80,8 +80,9 @@ def AddToMeta(meta, attrs):
 		attrs['py'] = random.uniform(-500, -100)
 		attrs['pw'] = random.uniform(50, 80)
 		attrs['shape'] = RECT
-		attrs['desc'] = ''
+		attrs['desc'] = u''
 		meta.append(attrs)
+		print attrs['src']
 
 
 def main():
@@ -97,9 +98,10 @@ def main():
 		attrs = MakeTiles(base)
 		AddToMeta(meta['images'], attrs)
 
-	if meta != orig_meta:
+	if meta != orig_meta and '-n' not in sys.argv:
 		os.rename(META, META + '.backup-%d' % time.time())
-		open(META, 'w').write(M_PREFIX + json.dumps(meta) + M_SUFFIX)
+		meta = json.dumps(meta, separators=(',', ':'))
+		open(META, 'w').write(M_PREFIX + meta + M_SUFFIX)
 
 
 if __name__ == '__main__':
