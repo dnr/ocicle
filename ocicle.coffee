@@ -1,9 +1,6 @@
 
 # TODO:
 # use more detailed scales when zooming out.
-# change marks (and maybe more) to use different coords:
-#   extent of central vertical line
-# think about how to integrate super-wide or 360 panos.
 # keyboard shortcuts.
 # play:
 #   fix issues around hitting next/prev while flying
@@ -326,7 +323,7 @@ class PanoCube extends THREE.Geometry
 # }]
 # marks = [{
 #   name: name
-#   view: view
+#   pos: view-position (see View::to/from_position)
 # }]
 class Metadata
   constructor: (@data, @js_path) ->
@@ -510,6 +507,18 @@ class View
   clone: () ->
     new View @scale, @pan_x, @pan_y
 
+  from_position: (cw2, ch2, pos) ->
+    # put pos.px, py in the center of the screen, with at least pos.r distance
+    # from the edges.
+    @scale = Math.min(cw2, ch2) / pos.r
+    @pan_x = cw2 - pos.px * @scale
+    @pan_y = ch2 - pos.py * @scale
+
+  to_position: (cw2, ch2) ->
+    r: Math.min(cw2, ch2) / @scale
+    px: (cw2 - @pan_x) / @scale
+    py: (ch2 - @pan_y) / @scale
+
 class View3
   constructor: (@fov, @lat, @lon) ->
 
@@ -549,7 +558,8 @@ class Ocicle
     @view = new View UNZOOM_LIMIT, @cw2, @ch2
     @view_t = new View  # reusable object
 
-    @slide_to @find_mark('home').view, FLY_MS
+    @view_t.from_position @cw2, @ch2, @find_mark('home').pos
+    @slide_to @view_t, FLY_MS
 
 
   setup_contexts: () ->
@@ -603,7 +613,8 @@ class Ocicle
       a.innerText = mark.name
       a.onclick = do (mark) => () =>
         @play false
-        @fly_to mark.view
+        @view_t.from_position @cw2, @ch2, mark.pos
+        @fly_to @view_t
         false
       li.appendChild a
       ul.appendChild li
@@ -642,12 +653,11 @@ class Ocicle
       editmark.addEventListener 'change', () =>
         name = editmark.value
         editmark.value = ''
-        if name == 'home' then return
         mark = @find_mark name
         if not mark
           mark = {name: name}
           @meta.data.marks.push mark
-        mark.view = @view.clone()
+        mark.pos = @view.to_position(@cw2, @ch2)
         @setup_bookmarks()
 
       gridsize = $('gridsize')
@@ -1093,9 +1103,10 @@ class Ocicle
     set_text 'fps', @fps.toFixed 0
     @last_now = now
     set_text 'tiles', ImageLoader.stats()
-    set_text 'vs', @view.scale.toPrecision 4
-    set_text 'vx', @view.pan_x.toFixed 0
-    set_text 'vy', @view.pan_y.toFixed 0
+    pos = @view.to_position @cw2, @ch2
+    set_text 'px', pos.px.toPrecision 5
+    set_text 'py', pos.py.toPrecision 5
+    set_text 'pr', pos.r.toPrecision 5
     v3 = @view3.lat.toFixed 0
     v3 += '/' + @view3.lon.toFixed 0
     v3 += '/' + @view3.fov.toFixed 0
