@@ -44,14 +44,7 @@ FOV_OUT = 110
 FOV_MAX = 120
 
 # Set false for more speed.
-HIGH_QUALITY = false
-
-if HIGH_QUALITY
-  FORCE_CANVAS_RENDERER = false
-  PANO_DRAW_LOWER_LEVELS = true
-else
-  FORCE_CANVAS_RENDERER = true
-  PANO_DRAW_LOWER_LEVELS = false
+PANO_DRAW_LOWER_LEVELS = false
 
 BKGD_SCALEFACTOR = 8
 BKGD_IMAGE = 'bkgd/bk.jpg'
