@@ -28,6 +28,7 @@ copy_strip ocicle.coffee
 coffee -c publish/ocicle.coffee
 rm publish/ocicle.coffee
 
+chmod -R a+rX publish/
 rsync -azv --delete publish/ m1:zoom/publish/
 
 rm -rf publish/

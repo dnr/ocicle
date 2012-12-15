@@ -646,8 +646,8 @@ class Ocicle
       desc = $('desc')
       desc.contentEditable = true
       desc.addEventListener 'input', () =>
-        if @edit_images.length == 1
-          @edit_images[0].desc = desc.innerText
+        if @highlight_image
+          @highlight_image.desc = desc.innerText
 
       shape = $('shapeselect')
       shape.addEventListener 'change', () =>
