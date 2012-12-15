@@ -60,6 +60,9 @@ PLAY_ICON = 'icons/play.png'
 PAUSE_ICON = 'icons/pause.png'
 SAVE_ICON = 'icons/save.png'
 
+TILE_PREFIX = 'http://dmyxhfpirp60t.cloudfront.net/'
+TILE_PREFIX = 'tiles/'
+
 # shapes:
 RECT = 0
 CIRCLE = 1
@@ -429,7 +432,7 @@ class DZImage
     @ph = @h * @pw / @w
 
   get_at_level: (level, x, y) ->
-    'tiles/' + @src + '/' + level + '/' + x + '_' + y + '.jpg'
+    "#{TILE_PREFIX}#{@src}/#{level}/#{x}_#{y}.jpg"
 
   find_level: (dim) ->
     Math.ceil log2 dim
@@ -498,7 +501,7 @@ class DZPano
 
   get_url: (level, face, ix, iy) =>
     level = @base_level + level
-    "tiles/#{@src}_#{face}/#{level}/#{ix}_#{iy}.jpg"
+    "#{TILE_PREFIX}#{@src}_#{face}/#{level}/#{ix}_#{iy}.jpg"
 
 
 class View
