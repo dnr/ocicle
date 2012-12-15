@@ -47,14 +47,16 @@ FOV_MAX = 120
 PANO_DRAW_LOWER_LEVELS = false
 
 BKGD_SCALEFACTOR = 8
-BKGD_IMAGE = 'bkgd/bk.jpg'
+BKGD_IMAGE = 'bkgd/bk4as.jpg'
 
 PLAY_ICON = 'icons/play.png'
 PAUSE_ICON = 'icons/pause.png'
 SAVE_ICON = 'icons/save.png'
 
 TILE_PREFIX = 'http://dmyxhfpirp60t.cloudfront.net/'
+#[[[
 TILE_PREFIX = 'tiles/'
+#]]]
 
 # shapes:
 RECT = 0
@@ -524,12 +526,17 @@ class View3
 
 class Ocicle
   constructor: (@c2, @c3, @meta, @bkgd_image) ->
+    #[[[
     @edit_mode = false
+    #]]]
 
     add_event = (events, method) =>
+      edit_switch = () => interaction_normal[method].apply @, arguments
+      #[[[
       edit_switch = () =>
         interaction = if @edit_mode then interaction_edit else interaction_normal
         interaction[method].apply @, arguments
+      #]]]
       for event in events
         @c2.addEventListener event, edit_switch, true
         @c3.addEventListener event, edit_switch, true
@@ -539,7 +546,9 @@ class Ocicle
     add_event ['mousewheel', 'DOMMouseScroll'], 'mousewheel'
 
     @last_now = @fps = 0
+    #[[[
     @gridsize = parseInt $('gridsize').value
+    #]]]
     @images = (new DZImage dz for dz in @meta.data.images)
     @setup_bookmarks()
     @tile_cache = new LruCache TILE_CACHE_SIZE
@@ -620,6 +629,7 @@ class Ocicle
       if mark.name == name
         return mark
 
+  #[[[
   edit: () ->
     editlink = $('editlink')
     if @edit_mode
@@ -694,6 +704,7 @@ class Ocicle
       $('order_down').addEventListener 'click', () -> reorder 'down'
 
       @redraw()
+  #]]]
 
   find_containing_image_client: (x, y) ->
     # We don't need to subtract getBoundingClientRect().left/top because
@@ -774,6 +785,7 @@ class Ocicle
       else
         @do_zoom factor, e.clientX, e.clientY
 
+  #[[[
   interaction_edit =
     # drag states:
     #  11: left click on already selected image  (either remove or drag)
@@ -910,6 +922,7 @@ class Ocicle
       @drag_state = 0
 
     mousewheel: interaction_normal.mousewheel
+  #]]]
 
   # Fly to next/previous image.
   # 1 for next, -1 for prev.
@@ -1091,6 +1104,7 @@ class Ocicle
     else
       @pano_image = null
 
+  #[[[
   update_fps: () ->
     now = Date.now()
     ms = now - @last_now
@@ -1141,6 +1155,7 @@ class Ocicle
     ctx.lineWidth = 3
     ctx.strokeStyle = 'rgba(0,0,200,0.5)'
     ctx.strokeRect x, y, w, h
+  #]]]
 
   draw_images: (really, view, redraw) ->
     max_ratio = 0
@@ -1195,6 +1210,7 @@ class Ocicle
 
     max_ratio
 
+  #[[[
   draw_links: () ->
     ctx = @ctx2
     ctx.lineWidth = 3
@@ -1216,6 +1232,7 @@ class Ocicle
       set_text 'ratio', '1\u2236' + (1 / max_ratio).toFixed 1
     else
       set_text 'ratio', max_ratio.toFixed 1
+  #]]]
 
   prefetch_path: (path) ->
     for t in [0..5]
@@ -1234,7 +1251,9 @@ class Ocicle
 
   render: (skip_limits) ->
     @request_id = null
+    #[[[
     @update_fps()
+    #]]]
 
     if @three_d
       if @t_scene
@@ -1247,7 +1266,9 @@ class Ocicle
         proj_h = @t_pano.ts / 2 * Math.tan(@view3.fov * Math.PI / 180 / 2)
         level = Math.floor log2(@ch / proj_h) + bias
         level = clamp level, 0, @t_pano.levels - 1
+        #[[[
         set_text 'level', level
+        #]]]
         for i in [0...@t_pano.levels]
           vis = if PANO_DRAW_LOWER_LEVELS then i <= level else i == level
           @t_meshes[i].visible = vis
@@ -1264,15 +1285,19 @@ class Ocicle
     else
       @draw_background()
       @update_highlight_image()
+      #[[[
       if @edit_mode and @gridsize then @draw_grid()
+      #]]]
 
       max_ratio = @draw_images true, @view, @redraw
 
+      #[[[
       if @edit_mode
         @draw_links()
         if @drag_box then @draw_drag_box()
 
       @set_ratio_text max_ratio
+      #]]]
 
       switch_views = @pano_image
 

@@ -63,7 +63,10 @@ a:hover {
 }
 
 #bottomstuff {
+	width: 208px;
+	/* [[[ */
 	width: 240px;
+	/* ]]] */
 }
 
 #bottomstuff > div {

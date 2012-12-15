@@ -1,6 +1,6 @@
 <html>
 	<head>
-		<title>Ocicle</title>
+		<title>zoom</title>
 		<link rel='stylesheet' href='style.css'>
 		<script src='data/meta.js'></script>
 		<script src='bigscreen.min.js'></script>
@@ -8,6 +8,7 @@
 		<script src='ocicle.js'></script>
 	</head>
 	<body>
+		<!-- [[[ -->
 		<div id='editstuff'>
 			<div>
 				<label>
@@ -44,6 +45,7 @@
 				</ul>
 			</div>
 		</div>
+		<!-- ]]] -->
 		<div id='mainbox'>
 			<canvas id='c2'></canvas>
 			<canvas id='c3' style='display:none'></canvas>
@@ -68,12 +70,15 @@
 				<a href='javascript:BigScreen.toggle()'><img
 					src='icons/fullscreen.png' alt='full screen'
 					width=32 height=32></a>
+				<!-- [[[ -->
 				<a href='javascript:ocicle.edit()'><img
 					src='icons/pencil.png' alt='edit'
 					width=32 height=32 id='editlink'></a>
+				<!-- ]]] -->
 			</div>
 			<div id='desc'></div>
 		</div>
+		<!-- [[[ -->
 		<div id='info'>
 			<div>fps: <span id='fps'></span></div>
 			<div>px: <span id='px'></span></div>
@@ -84,5 +89,6 @@
 			<div>level: <span id='level'></span></div>
 			<div>tiles: <span id='tiles'></span></div>
 		</div>
+		<!-- ]]] -->
 	</body>
 </html>
