@@ -1,6 +1,7 @@
 <html>
 	<head>
 		<title>zoom</title>
+		<meta name='viewport' content='width=device-width, height=device-height, initial-scale=1, user-scalable=no, target-densitydpi=device-dpi'>
 		<link rel='stylesheet' href='style.css'>
 		<script src='data/meta.js'></script>
 		<script src='bigscreen.min.js'></script>
@@ -50,6 +51,7 @@
 			<canvas id='c2'></canvas>
 			<canvas id='c3' style='display:none'></canvas>
 		</div>
+		<div id='descbar'></div>
 		<div id='bottombar'>
 			<div id='bottomstuff'>
 				<div class='popup'>
@@ -67,7 +69,7 @@
 				<a href='javascript:ocicle.next()'><img
 					src='icons/next.png' alt='next'
 					width=32 height=32></a>
-				<a href='javascript:BigScreen.toggle()'><img
+				<a href='javascript:BigScreen.toggle()' id='fstoggle'><img
 					src='icons/fullscreen.png' alt='full screen'
 					width=32 height=32></a>
 				<!-- [[[ -->

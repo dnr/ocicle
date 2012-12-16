@@ -18,6 +18,9 @@
 # make panning more natural
 # zoom around cursor
 #
+# mobile:
+# hide fullscreen button on mobile
+#
 # pre-launch:
 # finish content
 # analytics
@@ -57,6 +60,9 @@ TILE_PREFIX = 'http://dmyxhfpirp60t.cloudfront.net/'
 #[[[
 TILE_PREFIX = 'tiles/'
 #]]]
+
+# This is a little lame, but ok for now.
+MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test navigator.userAgent
 
 # shapes:
 RECT = 0
@@ -126,6 +132,11 @@ clear_node = (node) ->
   if not (node instanceof Node) then node = $(node)
   while node.hasChildNodes()
     node.removeChild node.firstChild
+
+is_empty_obj = (o) ->
+  for own k of o
+    return false
+  return true
 
 log = (x, b) ->
   Math.log(x) / Math.log(b)
@@ -540,10 +551,15 @@ class Ocicle
       for event in events
         @c2.addEventListener event, edit_switch, true
         @c3.addEventListener event, edit_switch, true
+      return
+
     add_event ['mousedown', 'contextmenu'], 'mousedown'
     add_event ['mousemove'], 'mousemove'
     add_event ['mouseup', 'mouseout'], 'mouseup'
     add_event ['mousewheel', 'DOMMouseScroll'], 'mousewheel'
+    add_event ['touchstart'], 'touchstart'
+    add_event ['touchmove'], 'touchmove'
+    add_event ['touchend', 'touchleave', 'touchcancel'], 'touchend'
 
     @last_now = @fps = 0
     #[[[
@@ -552,6 +568,7 @@ class Ocicle
     @images = (new DZImage dz for dz in @meta.data.images)
     @setup_bookmarks()
     @tile_cache = new LruCache TILE_CACHE_SIZE
+    @touch_state = {}
 
     @fov_target = FOV_OUT
     @view3 = new View3 90, 0, 0
@@ -560,11 +577,10 @@ class Ocicle
 
     @setup_contexts()
 
-    @view = new View UNZOOM_LIMIT, @cw2, @ch2
+    @view = new View
     @view_t = new View  # reusable object
-
-    @view_t.from_position @cw2, @ch2, @find_mark('home').pos
-    @slide_to @view_t, FLY_MS
+    @view.from_position @cw2, @ch2, @find_mark('home').pos
+    @redraw()
 
 
   setup_contexts: () ->
@@ -728,8 +744,8 @@ class Ocicle
 
   interaction_normal =
     mousedown: (e) ->
+      e.preventDefault()
       if e.button == 0 or e.button == 1 or e.button == 2
-        e.preventDefault()
         @stop_animation()
         @play false
         @drag_state = 1
@@ -739,6 +755,7 @@ class Ocicle
         @drag_view3 = @view3.clone()
 
     mousemove: (e) ->
+      e.preventDefault()
       if @drag_state >= 1
         move_x = e.screenX - @drag_screen_x
         move_y = e.screenY - @drag_screen_y
@@ -746,7 +763,8 @@ class Ocicle
           @drag_state = 2
         if @drag_state >= 2
           if @three_d
-            factor = DRAG_FACTOR_3D * Math.tan(@view3.fov / 2 * Math.PI / 180) / @cw2
+            factor = DRAG_FACTOR_3D * \
+                Math.tan(@view3.fov / 2 * Math.PI / 180) / @cw2
             lat = @drag_view3.lat + factor * move_y
             @view3_t.lat = clamp lat, -89, 89
             @view3_t.lon = @drag_view3.lon - factor * move_x
@@ -759,8 +777,8 @@ class Ocicle
             @slide_to @view_t
 
     mouseup: (e) ->
+      e.preventDefault()
       if @drag_state == 1
-        e.preventDefault()
         if e.button == 0 or e.button == 2
           factor = if e.button == 0 then CLICK_ZOOM_FACTOR else 1/CLICK_ZOOM_FACTOR
           if @three_d
@@ -784,6 +802,50 @@ class Ocicle
         @do_zoom_3d factor, e.clientX, e.clientY
       else
         @do_zoom factor, e.clientX, e.clientY
+
+    touchstart: (e) ->
+      e.preventDefault()
+      # if there were no touches before, record starting state.
+      if is_empty_obj @touch_state
+        @drag_view = @view.clone()
+        @drag_view3 = @view3.clone()
+      # record starting screen coords for each new touch.
+      for t in e.changedTouches
+        @touch_state[t.identifier] =
+          sx: t.screenX
+          sy: t.screenY
+      false
+
+    touchmove: (e) ->
+      e.preventDefault()
+      # if there's one touch, pan. if two, zoom.
+      if e.touches.length == 1
+        t = e.touches[0]
+        ts = @touch_state[t.identifier]
+        return unless ts  # we should have gotten a touchstart for this
+        move_x = t.screenX - ts.sx
+        move_y = t.screenY - ts.sy
+        if @three_d
+          factor = DRAG_FACTOR_3D * Math.tan(@view3.fov / 2 * Math.PI / 180) / @cw2
+          lat = @drag_view3.lat + factor * move_y
+          @view3_t.lat = clamp lat, -89, 89
+          @view3_t.lon = @drag_view3.lon - factor * move_x
+          @view3_t.fov = @view3.fov
+          @slide_to_3d @view3_t
+        else
+          @view_t.pan_x = @drag_view.pan_x + DRAG_FACTOR * move_x
+          @view_t.pan_y = @drag_view.pan_y + DRAG_FACTOR * move_y
+          @view_t.scale = @view.scale
+          @slide_to @view_t
+      else if e.touches.length == 2
+        false
+      false
+
+    touchend: (e) ->
+      e.preventDefault()
+      for t in e.changedTouches
+        delete @touch_state[t.identifier]
+      false
 
   #[[[
   interaction_edit =
@@ -936,6 +998,8 @@ class Ocicle
     idx += dir
     if idx >= 0 and idx < @images.length
       view1 = @center_around_image @images[idx]
+      @between_views = true
+      @toggle_three_d false
       @fly_to view1 if view1
 
     # If we can go farther in this direction, calculate that path too
@@ -1053,9 +1117,10 @@ class Ocicle
     @c3.style.display = if @three_d then 'block' else 'none'
 
   draw_background: () ->
-    if not @bkgd_image.complete
+    if not @bkgd_image?.complete
       # If we're not going to draw over everything, clear it.
-      @ctx2.clearRect 0, 0, @cw, @ch
+      @ctx2.fillStyle = 'black'
+      @ctx2.fillRect 0, 0, @cw, @ch
       return
 
     ctx = @ctx2
@@ -1337,16 +1402,30 @@ class Ocicle
 
 
 on_resize = () ->
-  $('desc').style.width = \
-    $('bottombar').clientWidth - $('bottomstuff').clientWidth - 16
+  bb = $('bottombar')
+  descbar = $('descbar')
+  desc = $('desc')
+  bs = $('bottomstuff')
   mb = $('mainbox')
-  mb.style.height = \
-    mb.parentElement.clientHeight - $('bottombar').clientHeight
+  if bb.clientWidth > 700
+    descbar.style.display = 'none'
+    bb.appendChild desc if desc.parentElement != bb
+    desc.style.width = bb.clientWidth - bs.clientWidth - 16
+    mb.style.height = mb.parentElement.clientHeight - bb.clientHeight
+  else
+    descbar.style.display = 'block'
+    descbar.appendChild desc if desc.parentElement != descbar
+    desc.style.width = '100%'
+    mb.style.height = \
+      mb.parentElement.clientHeight - bb.clientHeight - descbar.clientHeight
   if window.ocicle then window.ocicle.resize()
 
 on_load = () ->
   new ImageLoader PAUSE_ICON   # prefetch this so it's cached
-  bkgd_image = new ImageLoader BKGD_IMAGE
+  if MOBILE
+    $('fstoggle').style.display = 'none'
+  else
+    bkgd_image = new ImageLoader BKGD_IMAGE
   on_resize()
   meta = new Metadata window.META, '/data/meta.js'
   delete window.META
