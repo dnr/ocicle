@@ -23,7 +23,7 @@ main = () ->
       age = if cacheable then 24*3600 else 0
       send(req, req.url).root(__dirname).maxage(age*1000).pipe(res)
 
-  server.listen 1337, '127.0.0.1'
+  server.listen 1337, '0.0.0.0'
   console.log 'Server running at http://127.0.0.1:1337/'
 
 main()

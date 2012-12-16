@@ -51,7 +51,7 @@ a:hover {
 	/* height set in code */
 }
 
-#bottombar {
+#bottombar, #descbar {
 	float: top;
 	width: 100%;
 	height: 40px;
@@ -96,6 +96,7 @@ a:hover {
 #desc {
 	text-align: center;
 	padding: 2px;
+	overflow: hidden;
 	/* width set in code */
 	/* line-height set in code */
 }

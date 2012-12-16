@@ -18,6 +18,9 @@
 # make panning more natural
 # zoom around cursor
 #
+# mobile:
+# hide fullscreen button on mobile
+#
 # pre-launch:
 # finish content
 # analytics
@@ -544,6 +547,9 @@ class Ocicle
     add_event ['mousemove'], 'mousemove'
     add_event ['mouseup', 'mouseout'], 'mouseup'
     add_event ['mousewheel', 'DOMMouseScroll'], 'mousewheel'
+    add_event ['touchstart'], 'touchstart'
+    add_event ['touchmove'], 'touchmove'
+    add_event ['touchend', 'touchleave', 'touchcancel'], 'touchend'
 
     @last_now = @fps = 0
     #[[[
@@ -726,52 +732,77 @@ class Ocicle
         return [i, xa, ya]
     return [null, 0, 0]
 
+  interact_press: (sx, sy) ->
+    @stop_animation()
+    @play false
+    @drag_state = 1
+    @drag_screen_x = sx
+    @drag_screen_y = sy
+    @drag_view = @view.clone()
+    @drag_view3 = @view3.clone()
+
+  interact_move: (sx, sy) ->
+    if @drag_state >= 1
+      move_x = sx - @drag_screen_x
+      move_y = sy - @drag_screen_y
+      if Math.abs(move_x) > DRAG_THRESHOLD or Math.abs(move_y) > DRAG_THRESHOLD
+        @drag_state = 2
+      if @drag_state >= 2
+        if @three_d
+          factor = DRAG_FACTOR_3D * Math.tan(@view3.fov / 2 * Math.PI / 180) / @cw2
+          lat = @drag_view3.lat + factor * move_y
+          @view3_t.lat = clamp lat, -89, 89
+          @view3_t.lon = @drag_view3.lon - factor * move_x
+          @view3_t.fov = @view3.fov
+          @slide_to_3d @view3_t
+        else
+          @view_t.pan_x = @drag_view.pan_x + DRAG_FACTOR * move_x
+          @view_t.pan_y = @drag_view.pan_y + DRAG_FACTOR * move_y
+          @view_t.scale = @view.scale
+          @slide_to @view_t
+
+  interact_end: (cx, cy, button) ->
+    if @drag_state == 1
+      if button == 0 or button == 2
+        factor = if button == 0 then CLICK_ZOOM_FACTOR else 1/CLICK_ZOOM_FACTOR
+        if @three_d
+          @do_zoom_3d factor, cx, cy
+        else
+          @do_zoom factor, cx, cy
+      else if button == 1
+        [i] = @find_containing_image_client cx, cy
+        coords = @center_around_image i
+        @fly_to coords if coords
+    @drag_state = 0
+
   interaction_normal =
     mousedown: (e) ->
+      e.preventDefault()
       if e.button == 0 or e.button == 1 or e.button == 2
-        e.preventDefault()
-        @stop_animation()
-        @play false
-        @drag_state = 1
-        @drag_screen_x = e.screenX
-        @drag_screen_y = e.screenY
-        @drag_view = @view.clone()
-        @drag_view3 = @view3.clone()
+        @interact_press e.screenX, e.screenY
+
+    touchstart: (e) ->
+      e.preventDefault()
+      touch = e.touches[0]
+      @interact_press touch.clientX, touch.clientY
 
     mousemove: (e) ->
-      if @drag_state >= 1
-        move_x = e.screenX - @drag_screen_x
-        move_y = e.screenY - @drag_screen_y
-        if Math.abs(move_x) > DRAG_THRESHOLD or Math.abs(move_y) > DRAG_THRESHOLD
-          @drag_state = 2
-        if @drag_state >= 2
-          if @three_d
-            factor = DRAG_FACTOR_3D * Math.tan(@view3.fov / 2 * Math.PI / 180) / @cw2
-            lat = @drag_view3.lat + factor * move_y
-            @view3_t.lat = clamp lat, -89, 89
-            @view3_t.lon = @drag_view3.lon - factor * move_x
-            @view3_t.fov = @view3.fov
-            @slide_to_3d @view3_t
-          else
-            @view_t.pan_x = @drag_view.pan_x + DRAG_FACTOR * move_x
-            @view_t.pan_y = @drag_view.pan_y + DRAG_FACTOR * move_y
-            @view_t.scale = @view.scale
-            @slide_to @view_t
+      e.preventDefault()
+      @interact_move e.screenX, e.screenY
+
+    touchmove: (e) ->
+      e.preventDefault()
+      touch = e.touches[0]
+      @interact_move touch.clientX, touch.clientY
 
     mouseup: (e) ->
-      if @drag_state == 1
-        e.preventDefault()
-        if e.button == 0 or e.button == 2
-          factor = if e.button == 0 then CLICK_ZOOM_FACTOR else 1/CLICK_ZOOM_FACTOR
-          if @three_d
-            @do_zoom_3d factor, e.clientX, e.clientY
-          else
-            @do_zoom factor, e.clientX, e.clientY
-        else if e.button == 1
-          [i] = @find_containing_image_client e.clientX, e.clientY
-          coords = @center_around_image i
-          @fly_to coords if coords
-      @drag_state = 0
+      e.preventDefault()
+      @interact_end e.clientX, e.clientY, e.button
+
+    touchend: (e) ->
+      e.preventDefault()
+      touch = e.touches[0]
+      @interact_end touch.clientX, touch.clientY, 0
 
     mousewheel: (e) ->
       e.preventDefault()
@@ -936,6 +967,8 @@ class Ocicle
     idx += dir
     if idx >= 0 and idx < @images.length
       view1 = @center_around_image @images[idx]
+      @between_views = true
+      @toggle_three_d false
       @fly_to view1 if view1
 
     # If we can go farther in this direction, calculate that path too
@@ -1337,11 +1370,22 @@ class Ocicle
 
 
 on_resize = () ->
-  $('desc').style.width = \
-    $('bottombar').clientWidth - $('bottomstuff').clientWidth - 16
+  bb = $('bottombar')
+  descbar = $('descbar')
+  desc = $('desc')
+  bs = $('bottomstuff')
   mb = $('mainbox')
-  mb.style.height = \
-    mb.parentElement.clientHeight - $('bottombar').clientHeight
+  if bb.clientWidth > 700
+    descbar.style.display = 'none'
+    bb.appendChild desc if desc.parentElement != bb
+    desc.style.width = bb.clientWidth - bs.clientWidth - 16
+    mb.style.height = mb.parentElement.clientHeight - bb.clientHeight
+  else
+    descbar.style.display = 'block'
+    descbar.appendChild desc if desc.parentElement != descbar
+    desc.style.width = '100%'
+    mb.style.height = \
+      mb.parentElement.clientHeight - bb.clientHeight - descbar.clientHeight
   if window.ocicle then window.ocicle.resize()
 
 on_load = () ->
