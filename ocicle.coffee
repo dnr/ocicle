@@ -838,7 +838,28 @@ class Ocicle
           @view_t.scale = @view.scale
           @slide_to @view_t
       else if e.touches.length == 2
-        false
+        ts0 = @touch_state[e.touches[0].identifier]
+        ts1 = @touch_state[e.touches[1].identifier]
+        return unless ts0 and ts1
+        t0x = e.touches[0].screenX
+        t0y = e.touches[0].screenY
+        t1x = e.touches[1].screenX
+        t1y = e.touches[1].screenY
+
+        old_dist = (ts1.sx - ts0.sx) * (ts1.sx - ts0.sx) + \
+                   (ts1.sy - ts0.sy) * (ts1.sy - ts0.sy)
+        new_dist = (t1x - t0x) * (t1x - t0x) + (t1y - t0y) * (t1y - t0y)
+
+        factor = Math.sqrt(new_dist / old_dist)
+        cx = (e.touches[0].clientX + e.touches[1].clientX) / 2
+        cy = (e.touches[0].clientY + e.touches[1].clientY) / 2
+
+        if @three_d
+          factor = factor * @drag_view3.fov / @fov_target
+          @do_zoom_3d factor, cx, cy
+        else
+          factor = factor * @drag_view.scale / @scale_target
+          @do_zoom factor, cx, cy
       false
 
     touchend: (e) ->
@@ -1108,7 +1129,7 @@ class Ocicle
       @render skip_limits
       unless @request_id  # maybe render set up a new animation
         @request_id = if t < 1 then requestFrame frame
-    frame()
+    requestFrame frame
 
   toggle_three_d: (val) ->
     if val is undefined then val = not @three_d
