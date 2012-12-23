@@ -511,16 +511,23 @@ class DZPano
 
 
 class View
-  constructor: (@scale, @pan_x, @pan_y) ->
+  constructor: (@three_d, @scale, @pan_x, @pan_y, @fov, @lat, @lon) ->
 
   copy_to: (v) ->
+    # flag
+    v.three_d = @three_d
+    # 2d
     v.scale = @scale
     v.pan_x = @pan_x
     v.pan_y = @pan_y
+    # 3d
+    v.fov = @fov
+    v.lat = @lat
+    v.lon = @lon
 
   from_position: (cw2, ch2, pos) ->
     # put pos.px, py in the center of the screen, with at least pos.r distance
-    # from the edges.
+    # from the edges. note that this only modifies the 2d view.
     @scale = Math.min(cw2, ch2) / pos.r
     @pan_x = cw2 - pos.px * @scale
     @pan_y = ch2 - pos.py * @scale
@@ -529,14 +536,6 @@ class View
     r: Math.min(cw2, ch2) / @scale
     px: (cw2 - @pan_x) / @scale
     py: (ch2 - @pan_y) / @scale
-
-class View3
-  constructor: (@fov, @lat, @lon) ->
-
-  copy_to: (v) ->
-    v.fov = @fov
-    v.lat = @lat
-    v.lon = @lon
 
 
 class Ocicle
@@ -573,22 +572,19 @@ class Ocicle
     @setup_bookmarks()
     @tile_cache = new LruCache TILE_CACHE_SIZE
 
+    @view = new View false, 1, 0, 0, 90, 0, 0
+    @view_t = new View  # reusable object
+
+    # interaction state
     @touch_state = {}
     @drag_view = new View
-    @drag_view3 = new View3
-
-    @fov_target = FOV_OUT
-    @view3 = new View3 90, 0, 0
-    @view3_t = new View3  # reusable object
-    @three_d = false
 
     @setup_contexts()
 
-    @view = new View
-    @view_t = new View  # reusable object
     @view.from_position @cw2, @ch2, @find_mark('home').pos
+    @scale_target = @view.scale
+    @fov_target = FOV_OUT
     @redraw()
-
 
   setup_contexts: () ->
     @cw = @c2.parentElement.clientWidth
@@ -610,7 +606,7 @@ class Ocicle
       @t_projector = new THREE.Projector
 
     @t_renderer.setSize @cw, @ch
-    @point_camera @view3
+    @point_camera @view
 
   setup_pano: (pano_meta) ->
     if @t_pano?.src != pano_meta.src
@@ -751,7 +747,6 @@ class Ocicle
 
   touch_snap: (e) ->
     @view.copy_to @drag_view
-    @view3.copy_to @drag_view3
     for t in e.touches
       ts = @touch_state[t.identifier] = {} unless ts = @touch_state[t.identifier]
       ts.sx = t.clientX
@@ -767,7 +762,6 @@ class Ocicle
       @drag_screen_x = e.clientX
       @drag_screen_y = e.clientY
       @view.copy_to @drag_view
-      @view3.copy_to @drag_view3
 
     mousemove: (e) ->
       e.preventDefault()
@@ -777,14 +771,14 @@ class Ocicle
         if Math.abs(move_x) > DRAG_THRESHOLD or Math.abs(move_y) > DRAG_THRESHOLD
           @drag_state = 2
         if @drag_state >= 2
-          if @three_d
+          if @view.three_d
             factor = DRAG_FACTOR_3D * \
-                Math.tan(@view3.fov / 2 * Math.PI / 180) / @cw2
-            lat = @drag_view3.lat + factor * move_y
-            @view3_t.lat = clamp lat, -89, 89
-            @view3_t.lon = @drag_view3.lon - factor * move_x
-            @view3_t.fov = @view3.fov
-            @slide_to_3d @view3_t
+                Math.tan(@view.fov / 2 * Math.PI / 180) / @cw2
+            lat = @drag_view.lat + factor * move_y
+            @view_t.lat = clamp lat, -89, 89
+            @view_t.lon = @drag_view.lon - factor * move_x
+            @view_t.fov = @view.fov
+            @slide_to_3d @view_t
           else
             @view_t.pan_x = @drag_view.pan_x + DRAG_FACTOR * move_x
             @view_t.pan_y = @drag_view.pan_y + DRAG_FACTOR * move_y
@@ -796,7 +790,7 @@ class Ocicle
       if @drag_state == 1
         if e.button == 0 or e.button == 2
           factor = if e.button == 0 then CLICK_ZOOM_FACTOR else 1/CLICK_ZOOM_FACTOR
-          if @three_d
+          if @view.three_d
             @do_zoom_3d factor, e.clientX, e.clientY
           else
             @do_zoom factor, e.clientX, e.clientY
@@ -813,7 +807,7 @@ class Ocicle
         factor = if e.wheelDelta > 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
       else
         factor = if e.detail < 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
-      if @three_d
+      if @view.three_d
         @do_zoom_3d factor, e.clientX, e.clientY
       else
         @do_zoom factor, e.clientX, e.clientY
@@ -833,13 +827,13 @@ class Ocicle
         return unless ts  # we should have gotten a touchstart for this
         move_x = t.clientX - ts.sx
         move_y = t.clientY - ts.sy
-        if @three_d
-          factor = DRAG_FACTOR_3D * Math.tan(@view3.fov / 2 * Math.PI / 180) / @cw2
-          lat = @drag_view3.lat + factor * move_y
-          @view3_t.lat = clamp lat, -89, 89
-          @view3_t.lon = @drag_view3.lon - factor * move_x
-          @view3_t.fov = @view3.fov
-          @slide_to_3d @view3_t
+        if @view.three_d
+          factor = DRAG_FACTOR_3D * Math.tan(@view.fov / 2 * Math.PI / 180) / @cw2
+          lat = @drag_view.lat + factor * move_y
+          @view_t.lat = clamp lat, -89, 89
+          @view_t.lon = @drag_view.lon - factor * move_x
+          @view_t.fov = @view.fov
+          @slide_to_3d @view_t
         else
           @view_t.pan_x = @drag_view.pan_x + DRAG_FACTOR * move_x
           @view_t.pan_y = @drag_view.pan_y + DRAG_FACTOR * move_y
@@ -861,8 +855,8 @@ class Ocicle
         new_dist = (t1x - t0x) * (t1x - t0x) + (t1y - t0y) * (t1y - t0y)
         factor = Math.sqrt(new_dist / old_dist)
 
-        if @three_d
-          factor = factor * @drag_view3.fov / @fov_target
+        if @view.three_d
+          factor = factor * @drag_view.fov / @fov_target
           @do_zoom_3d factor
         else
           factor = factor * @drag_view.scale / @scale_target
@@ -1099,10 +1093,10 @@ class Ocicle
     # TODO: use clientxy
     fov = @fov_target / factor
     @fov_target = clamp fov, FOV_MIN, FOV_MAX
-    @view3_t.fov = @fov_target
-    @view3_t.lat = @view3.lat
-    @view3_t.lon = @view3.lon
-    @slide_to_3d @view3_t
+    @view_t.fov = @fov_target
+    @view_t.lat = @view.lat
+    @view_t.lon = @view.lon
+    @slide_to_3d @view_t
 
   slide_to: (e, ms=SLIDE_MS) ->
     @scale_target = e.scale
@@ -1119,7 +1113,7 @@ class Ocicle
 
   slide_to_3d: (e, ms=SLIDE_MS) ->
     @fov_target = e.fov
-    v = @view3
+    v = @view
     sp =
       sf: v.fov, st: v.lat, sn: v.lon
       ef: e.fov, et: e.lat, en: e.lon
@@ -1159,10 +1153,10 @@ class Ocicle
     @skip_limits = false
 
   toggle_three_d: (val) ->
-    if val is undefined then val = not @three_d
-    @three_d = val
-    @c2.style.display = if @three_d then 'none' else 'block'
-    @c3.style.display = if @three_d then 'block' else 'none'
+    if val is undefined then val = not @view.three_d
+    @view.three_d = val
+    @c2.style.display = if val then 'none' else 'block'
+    @c3.style.display = if val then 'block' else 'none'
 
   draw_background: () ->
     if not @bkgd_image?.complete
@@ -1230,9 +1224,9 @@ class Ocicle
     set_text 'px', pos.px.toPrecision 5
     set_text 'py', pos.py.toPrecision 5
     set_text 'pr', pos.r.toPrecision 5
-    v3 = @view3.lat.toFixed 0
-    v3 += '/' + @view3.lon.toFixed 0
-    v3 += '/' + @view3.fov.toFixed 0
+    v3 = @view.lat.toFixed 0
+    v3 += '/' + @view.lon.toFixed 0
+    v3 += '/' + @view.fov.toFixed 0
     set_text 'v3', v3
 
   snap: (x) ->
@@ -1368,15 +1362,15 @@ class Ocicle
     @update_fps()
     #]]]
 
-    if @three_d
+    if @view.three_d
       if @t_scene
         # Render what we have now.
-        @point_camera @view3
+        @point_camera @view
         @t_renderer.render @t_scene, @t_camera
 
         # For the next frame, adjust tile level based on fov.
         bias = 0
-        proj_h = @t_pano.ts / 2 * Math.tan(@view3.fov * Math.PI / 180 / 2)
+        proj_h = @t_pano.ts / 2 * Math.tan(@view.fov * Math.PI / 180 / 2)
         level = Math.floor log2(@ch / proj_h) + bias
         level = clamp level, 0, @t_pano.levels - 1
         #[[[
@@ -1393,7 +1387,7 @@ class Ocicle
           unless is_off_screen e
             e.material._ocicle_loader.load()
 
-      switch_views = @view3.fov > FOV_OUT
+      switch_views = @view.fov > FOV_OUT
 
     else
       @draw_background()
@@ -1418,12 +1412,12 @@ class Ocicle
       if not @between_views
         @between_views = true
         @toggle_three_d()
-        if @three_d
+        if @view.three_d
           pano = @pano_image.pano
           @setup_pano pano
-          @view3.fov = @fov_target = FOV_OUT
-          @view3.lat = pano.lat
-          @view3.lon = pano.lon
+          @view.fov = @fov_target = FOV_OUT
+          @view.lat = pano.lat
+          @view.lon = pano.lon
           @do_zoom_3d @fov_target / pano.fov
         else
           coords = @center_around_image @pano_image
