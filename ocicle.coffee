@@ -791,9 +791,9 @@ class Ocicle
         if e.button == 0 or e.button == 2
           factor = if e.button == 0 then CLICK_ZOOM_FACTOR else 1/CLICK_ZOOM_FACTOR
           if @three_d
-            @do_zoom_3d factor, e.clientX, e.clientY
+            @slide_to_3d @setup_zoom_3d factor, e.clientX, e.clientY, @view3_t
           else
-            @do_zoom factor, e.clientX, e.clientY
+            @slide_to @setup_zoom factor, e.clientX, e.clientY, @view_t
         else if e.button == 1
           [i] = @find_containing_image_client e.clientX, e.clientY
           coords = @center_around_image i
@@ -808,9 +808,9 @@ class Ocicle
       else
         factor = if e.detail < 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
       if @three_d
-        @do_zoom_3d factor, e.clientX, e.clientY
+        @slide_to_3d @setup_zoom_3d factor, e.clientX, e.clientY, @view3_t
       else
-        @do_zoom factor, e.clientX, e.clientY
+        @slide_to @setup_zoom factor, e.clientX, e.clientY, @view_t
 
     touchstart: (e) ->
       e.preventDefault()
@@ -858,10 +858,10 @@ class Ocicle
 
         if @three_d
           factor = factor * @drag_view3.fov / @fov_target
-          @do_zoom_3d factor, cx, cy
+          @slide_to_3d @setup_zoom_3d factor, cx, cy, @view3_t
         else
           factor = factor * @drag_view.scale / @scale_target
-          @do_zoom factor, cx, cy
+          @slide_to @setup_zoom factor, cx, cy, @view_t
       return
 
     touchend: (e) ->
@@ -1068,26 +1068,26 @@ class Ocicle
     @view_t.pan_y = @ch2 - (i.py + i.ph / 2) * scale
     @view_t
 
-  do_zoom: (factor, client_x, client_y) ->
+  setup_zoom: (factor, client_x, client_y, out) ->
     # We don't need to subtract getBoundingClientRect().left/top because
     # we know the canvas is positioned against the top left corner of
     # the window.
     @scale_target *= factor
-    @view_t.pan_x = client_x - (
+    out.pan_x = client_x - (
       @scale_target / @view.scale * (client_x - @view.pan_x))
-    @view_t.pan_y = client_y - (
+    out.pan_y = client_y - (
       @scale_target / @view.scale * (client_y - @view.pan_y))
-    @view_t.scale = @scale_target
-    @slide_to @view_t
+    out.scale = @scale_target
+    out
 
-  do_zoom_3d: (factor, client_x, client_y) ->
+  setup_zoom_3d: (factor, client_x, client_y, out) ->
     # TODO: use clientxy
     fov = @fov_target / factor
     @fov_target = clamp fov, FOV_MIN, FOV_MAX
-    @view3_t.fov = @fov_target
-    @view3_t.lat = @view3.lat
-    @view3_t.lon = @view3.lon
-    @slide_to_3d @view3_t
+    out.fov = @fov_target
+    out.lat = @view3.lat
+    out.lon = @view3.lon
+    out
 
   slide_to: (end, ms=SLIDE_MS) ->
     @scale_target = end.scale
@@ -1403,7 +1403,8 @@ class Ocicle
           @view3.fov = @fov_target = FOV_OUT
           @view3.lat = pano.lat
           @view3.lon = pano.lon
-          @do_zoom_3d @fov_target / pano.fov
+          factor = @fov_target / pano.fov
+          @slide_to_3d @setup_zoom_3d factor, null, null, @view3_t
         else
           coords = @center_around_image @pano_image
           @slide_to coords if coords
@@ -1414,10 +1415,11 @@ class Ocicle
       unless @skip_limits
         if max_ratio > 0 and max_ratio < 1 / ZOOM_LIMIT_LIMIT
           @scale_target = @view.scale
-          @do_zoom max_ratio * ZOOM_LIMIT_TARGET, @cw2, @ch2
+          factor = max_ratio * ZOOM_LIMIT_TARGET
+          @slide_to @setup_zoom factor, @cw2, @ch2, @view_t
         else if @view.scale < UNZOOM_LIMIT
           @scale_target = @view.scale
-          @do_zoom 1.05, @cw2, @ch2
+          @slide_to @setup_zoom 1.05, @cw2, @ch2, @view_t
 
   draw_loop: () =>
     more = @animation?()
