@@ -513,8 +513,10 @@ class DZPano
 class View
   constructor: (@scale, @pan_x, @pan_y) ->
 
-  clone: () ->
-    new View @scale, @pan_x, @pan_y
+  copy_to: (v) ->
+    v.scale = @scale
+    v.pan_x = @pan_x
+    v.pan_y = @pan_y
 
   from_position: (cw2, ch2, pos) ->
     # put pos.px, py in the center of the screen, with at least pos.r distance
@@ -531,8 +533,10 @@ class View
 class View3
   constructor: (@fov, @lat, @lon) ->
 
-  clone: () ->
-    new View3 @fov, @lat, @lon
+  copy_to: (v) ->
+    v.fov = @fov
+    v.lat = @lat
+    v.lon = @lon
 
 
 class Ocicle
@@ -568,7 +572,10 @@ class Ocicle
     @images = (new DZImage dz for dz in @meta.data.images)
     @setup_bookmarks()
     @tile_cache = new LruCache TILE_CACHE_SIZE
+
     @touch_state = {}
+    @drag_view = new View
+    @drag_view3 = new View3
 
     @fov_target = FOV_OUT
     @view3 = new View3 90, 0, 0
@@ -743,25 +750,24 @@ class Ocicle
     return [null, 0, 0]
 
   touch_snap: (e) ->
-    @drag_view = @view.clone()
-    @drag_view3 = @view3.clone()
+    @view.copy_to @drag_view
+    @view3.copy_to @drag_view3
     for t in e.touches
-      @touch_state[t.identifier] =
-        sx: t.clientX
-        sy: t.clientY
+      ts = @touch_state[t.identifier] = {} unless ts = @touch_state[t.identifier]
+      ts.sx = t.clientX
+      ts.sy = t.clientY
     return
 
   interaction_normal =
     mousedown: (e) ->
       e.preventDefault()
-      if e.button == 0 or e.button == 1 or e.button == 2
-        @stop_animation()
-        @play false
-        @drag_state = 1
-        @drag_screen_x = e.clientX
-        @drag_screen_y = e.clientY
-        @drag_view = @view.clone()
-        @drag_view3 = @view3.clone()
+      @stop_animation()
+      @play false
+      @drag_state = 1
+      @drag_screen_x = e.clientX
+      @drag_screen_y = e.clientY
+      @view.copy_to @drag_view
+      @view3.copy_to @drag_view3
 
     mousemove: (e) ->
       e.preventDefault()
@@ -1098,24 +1104,30 @@ class Ocicle
     @view3_t.lon = @view3.lon
     @slide_to_3d @view3_t
 
-  slide_to: (end, ms=SLIDE_MS) ->
-    @scale_target = end.scale
-    start = @view.clone()
-    update = (t) =>
+  slide_to: (e, ms=SLIDE_MS) ->
+    @scale_target = e.scale
+    v = @view
+    sp =
+      ss: v.scale, sx: v.pan_x, sy: v.pan_y
+      es: e.scale, ex: e.pan_x, ey: e.pan_y
+    update = (t) ->
       t = Math.sqrt t  # start fast, end slow
-      @view.scale = start.scale * (1-t) + end.scale * t
-      @view.pan_x = start.pan_x * (1-t) + end.pan_x * t
-      @view.pan_y = start.pan_y * (1-t) + end.pan_y * t
+      v.scale = sp.ss * (1-t) + sp.es * t
+      v.pan_x = sp.sx * (1-t) + sp.ex * t
+      v.pan_y = sp.sy * (1-t) + sp.ey * t
     @animate update, ms
 
-  slide_to_3d: (end, ms=SLIDE_MS) ->
-    @fov_target = end.fov
-    start = @view3.clone()
-    update = (t) =>
+  slide_to_3d: (e, ms=SLIDE_MS) ->
+    @fov_target = e.fov
+    v = @view3
+    sp =
+      sf: v.fov, st: v.lat, sn: v.lon
+      ef: e.fov, et: e.lat, en: e.lon
+    update = (t) ->
       t = Math.sqrt t  # start fast, end slow
-      @view3.fov = start.fov * (1-t) + end.fov * t
-      @view3.lat = start.lat * (1-t) + end.lat * t
-      @view3.lon = start.lon * (1-t) + end.lon * t
+      v.fov = sp.sf * (1-t) + sp.ef * t
+      v.lat = sp.st * (1-t) + sp.et * t
+      v.lon = sp.sn * (1-t) + sp.en * t
     @animate update, ms
 
   fly_to: (end, ms=FLY_MS) ->
