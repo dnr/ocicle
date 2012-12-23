@@ -856,12 +856,21 @@ class Ocicle
         cx = (e.touches[0].clientX + e.touches[1].clientX) / 2
         cy = (e.touches[0].clientY + e.touches[1].clientY) / 2
 
+        move_x = t0x - ts0.sx + t1x - ts1.sx
+        move_y = t0y - ts0.sy + t1y - ts1.sy
+        px = @drag_view.pan_x + DRAG_FACTOR * move_x / 2 - @view.pan_x
+        py = @drag_view.pan_y + DRAG_FACTOR * move_y / 2 - @view.pan_y
+
         if @three_d
           factor = factor * @drag_view3.fov / @fov_target
-          @slide_to_3d @setup_zoom_3d factor, cx, cy, @view3_t
+          @setup_zoom_3d factor, cx, cy, @view3_t
+          @slide_to_3d @view3_t
         else
           factor = factor * @drag_view.scale / @scale_target
-          @slide_to @setup_zoom factor, cx, cy, @view_t
+          @setup_zoom factor, cx, cy, @view_t
+          @view_t.pan_x += px
+          @view_t.pan_y += py
+          @slide_to @view_t
       return
 
     touchend: (e) ->
