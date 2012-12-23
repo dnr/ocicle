@@ -747,8 +747,8 @@ class Ocicle
     @drag_view3 = @view3.clone()
     for t in e.touches
       @touch_state[t.identifier] =
-        sx: t.screenX
-        sy: t.screenY
+        sx: t.clientX
+        sy: t.clientY
     return
 
   interaction_normal =
@@ -758,16 +758,16 @@ class Ocicle
         @stop_animation()
         @play false
         @drag_state = 1
-        @drag_screen_x = e.screenX
-        @drag_screen_y = e.screenY
+        @drag_screen_x = e.clientX
+        @drag_screen_y = e.clientY
         @drag_view = @view.clone()
         @drag_view3 = @view3.clone()
 
     mousemove: (e) ->
       e.preventDefault()
       if @drag_state >= 1
-        move_x = e.screenX - @drag_screen_x
-        move_y = e.screenY - @drag_screen_y
+        move_x = e.clientX - @drag_screen_x
+        move_y = e.clientY - @drag_screen_y
         if Math.abs(move_x) > DRAG_THRESHOLD or Math.abs(move_y) > DRAG_THRESHOLD
           @drag_state = 2
         if @drag_state >= 2
@@ -820,13 +820,13 @@ class Ocicle
 
     touchmove: (e) ->
       e.preventDefault()
-      # if there's one touch, pan. if two, zoom.
       if e.touches.length == 1
+        # Pan (using DRAG_FACTOR).
         t = e.touches[0]
         ts = @touch_state[t.identifier]
         return unless ts  # we should have gotten a touchstart for this
-        move_x = t.screenX - ts.sx
-        move_y = t.screenY - ts.sy
+        move_x = t.clientX - ts.sx
+        move_y = t.clientY - ts.sy
         if @three_d
           factor = DRAG_FACTOR_3D * Math.tan(@view3.fov / 2 * Math.PI / 180) / @cw2
           lat = @drag_view3.lat + factor * move_y
@@ -840,28 +840,37 @@ class Ocicle
           @view_t.scale = @view.scale
           @slide_to @view_t
       else if e.touches.length == 2
+        # Zoom+pan: Use the distance between the touches to calculate zoom, then
+        # pan following the midpoint of the touches.
         ts0 = @touch_state[e.touches[0].identifier]
         ts1 = @touch_state[e.touches[1].identifier]
         return unless ts0 and ts1
-        t0x = e.touches[0].screenX
-        t0y = e.touches[0].screenY
-        t1x = e.touches[1].screenX
-        t1y = e.touches[1].screenY
+        t0x = e.touches[0].clientX
+        t0y = e.touches[0].clientY
+        t1x = e.touches[1].clientX
+        t1y = e.touches[1].clientY
 
         old_dist = (ts1.sx - ts0.sx) * (ts1.sx - ts0.sx) + \
                    (ts1.sy - ts0.sy) * (ts1.sy - ts0.sy)
         new_dist = (t1x - t0x) * (t1x - t0x) + (t1y - t0y) * (t1y - t0y)
-
         factor = Math.sqrt(new_dist / old_dist)
-        cx = (e.touches[0].clientX + e.touches[1].clientX) / 2
-        cy = (e.touches[0].clientY + e.touches[1].clientY) / 2
 
         if @three_d
           factor = factor * @drag_view3.fov / @fov_target
-          @do_zoom_3d factor, cx, cy
+          @do_zoom_3d factor
         else
           factor = factor * @drag_view.scale / @scale_target
-          @do_zoom factor, cx, cy
+          # Do this manually instead of using @do_zoom so that we can pan
+          # following the midpoint of the two touches.
+          @scale_target *= factor
+          @view_t.scale = @scale_target
+          @view_t.pan_x = (t0x + t1x) / 2 - (
+            @scale_target / @drag_view.scale * (
+              (ts0.sx + ts1.sx) / 2 - @drag_view.pan_x))
+          @view_t.pan_y = (t0y + t1y) / 2 - (
+            @scale_target / @drag_view.scale * (
+              (ts0.sy + ts1.sy) / 2 - @drag_view.pan_y))
+          @slide_to @view_t
       return
 
     touchend: (e) ->
@@ -883,8 +892,8 @@ class Ocicle
       e.preventDefault()
       @stop_animation()
       @play false
-      @drag_screen_x = e.screenX
-      @drag_screen_y = e.screenY
+      @drag_screen_x = e.clientX
+      @drag_screen_y = e.clientY
       if e.button == 0
         @drag_base_images = (i.clone() for i in @images)
         [@drag_img, xa, ya] = @find_containing_image_client e.clientX, e.clientY
@@ -920,8 +929,8 @@ class Ocicle
 
     mousemove: (e) ->
       return if @drag_state == 0
-      move_x = e.screenX - @drag_screen_x
-      move_y = e.screenY - @drag_screen_y
+      move_x = e.clientX - @drag_screen_x
+      move_y = e.clientY - @drag_screen_y
 
       if @drag_state == 11
         if Math.abs(move_x) > DRAG_THRESHOLD or Math.abs(move_y) > DRAG_THRESHOLD
