@@ -1116,23 +1116,26 @@ class Ocicle
       update = (t) =>
         path t, @view
         @scale_target = @view.scale
-      @animate update, ms, true
+      @animate update, ms
+      # Set this after @animate (which resets it) so that the limit-enforcing in
+      # @render doesn't mess up our nice path (which may occasionally exceed the
+      # limits).
+      @skip_limits = true
 
   stop_animation: () ->
-    if @request_id
-      cancelFrame @request_id
-      @request_id = null
+    @animation = null
+    @skip_limits = false  # reset this whenever we reset @animation
 
-  animate: (update, ms, skip_limits) ->
-    @stop_animation()
+  animate: (update, ms) ->
+    # Call @redraw here to ensure the draw loop is running. Then replace
+    # @animation with the new one.
+    @redraw()
     start = Date.now() - 5
-    frame = () =>
+    @animation = () ->
       t = Math.min 1, (Date.now() - start) / ms
       update t
-      @render skip_limits
-      unless @request_id  # maybe render set up a new animation
-        @request_id = if t < 1 then requestFrame frame
-    requestFrame frame
+      return t < 1
+    @skip_limits = false
 
   toggle_three_d: (val) ->
     if val is undefined then val = not @three_d
@@ -1338,7 +1341,7 @@ class Ocicle
     t.z = 50 * Math.sin(phi) * Math.sin(theta)
     @t_camera.lookAt t
 
-  render: (skip_limits) ->
+  render: () ->
     @request_id = null
     #[[[
     @update_fps()
@@ -1408,7 +1411,7 @@ class Ocicle
       @between_views = false
 
       # handle 2d limit stuff
-      unless skip_limits
+      unless @skip_limits
         if max_ratio > 0 and max_ratio < 1 / ZOOM_LIMIT_LIMIT
           @scale_target = @view.scale
           @do_zoom max_ratio * ZOOM_LIMIT_TARGET, @cw2, @ch2
@@ -1416,9 +1419,22 @@ class Ocicle
           @scale_target = @view.scale
           @do_zoom 1.05, @cw2, @ch2
 
+  draw_loop: () =>
+    more = @animation?()
+    if not more
+      @animation = null
+      @skip_limits = false
+    @render()
+    if @animation
+      requestFrame @draw_loop
+
   redraw: () =>
-    unless @request_id
-      @request_id = requestFrame (=>@render())
+    # If @animation is true, there's already a pending frame request, so do
+    # nothing. Otherwise, start one with a dummy animation.
+    if not @animation
+      @animation = () -> false
+      @skip_limits = false
+      requestFrame @draw_loop
 
   resize: () ->
     @setup_contexts()
