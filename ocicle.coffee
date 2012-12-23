@@ -742,6 +742,15 @@ class Ocicle
         return [i, xa, ya]
     return [null, 0, 0]
 
+  touch_snap: (e) ->
+    @drag_view = @view.clone()
+    @drag_view3 = @view3.clone()
+    for t in e.touches
+      @touch_state[t.identifier] =
+        sx: t.screenX
+        sy: t.screenY
+    return
+
   interaction_normal =
     mousedown: (e) ->
       e.preventDefault()
@@ -805,16 +814,9 @@ class Ocicle
 
     touchstart: (e) ->
       e.preventDefault()
-      # if there were no touches before, record starting state.
-      if is_empty_obj @touch_state
-        @drag_view = @view.clone()
-        @drag_view3 = @view3.clone()
-      # record starting screen coords for each new touch.
-      for t in e.changedTouches
-        @touch_state[t.identifier] =
-          sx: t.screenX
-          sy: t.screenY
-      false
+      @stop_animation()
+      @play false
+      @touch_snap e
 
     touchmove: (e) ->
       e.preventDefault()
@@ -860,13 +862,14 @@ class Ocicle
         else
           factor = factor * @drag_view.scale / @scale_target
           @do_zoom factor, cx, cy
-      false
+      return
 
     touchend: (e) ->
       e.preventDefault()
+      @touch_snap e
       for t in e.changedTouches
         delete @touch_state[t.identifier]
-      false
+      return
 
   #[[[
   interaction_edit =
