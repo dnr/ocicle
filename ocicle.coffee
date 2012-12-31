@@ -18,12 +18,8 @@
 # make panning more natural
 # zoom around cursor
 #
-# mobile:
-# hide fullscreen button on mobile
-#
 # pre-launch:
 # finish content
-# analytics
 
 DRAG_FACTOR = 2
 DRAG_FACTOR_3D = 180
@@ -242,6 +238,10 @@ is_off_screen = (e) ->
   Math.max(x1, x2, x3, x4) < -1 or
   Math.min(y1, y2, y3, y4) > 1 or
   Math.max(y1, y2, y3, y4) < -1
+
+
+track_event = (cat, act, label) ->
+  _gaq.push ['_trackEvent', cat, act, label] if window._gaq
 
 
 # Heavily adapted from three.js's CubeGeometry.
@@ -610,6 +610,7 @@ class Ocicle
 
   setup_pano: (pano_meta) ->
     if @t_pano?.src != pano_meta.src
+      track_event 'Pano', 'View', pano_meta.src
       @t_pano = new DZPano pano_meta
       max_aniso = @t_renderer.getMaxAnisotropy()
       @t_scene = new THREE.Scene()
@@ -1196,11 +1197,18 @@ class Ocicle
     if i
       if i.pw * @view.scale / @cw < 0.5 and i.ph * @view.scale / @ch < 0.5
         i = null
+
     # update description
     desc = (i?.desc or '').replace /\n$/, ''
     set_text 'desc', desc
     $('desc').style.lineHeight = if desc.search('\n') > 0 then 1.1 else 2.2
     @highlight_image = i
+
+    # track event if this is new
+    if i and i != @last_highlight_image
+      track_event 'Image', 'View', i.src
+      @last_highlight_image = i
+
     # also check if we're inside it to set the pano image
     if (i and i.pano and
         i.px * @view.scale + @view.pan_x < 0 and
