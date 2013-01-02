@@ -26,6 +26,8 @@ copy_strip style.css
 
 copy_strip ocicle.coffee
 coffee -c publish/ocicle.coffee
+uglifyjs publish/ocicle.js -c -m -o publish/tmp
+mv -f publish/tmp publish/ocicle.js
 rm publish/ocicle.coffee
 
 chmod -R a+rX publish/
