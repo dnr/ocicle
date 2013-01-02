@@ -21,6 +21,9 @@
 # pre-launch:
 # finish content
 
+# This is a little lame, but ok for now.
+MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test navigator.userAgent
+
 DRAG_FACTOR = 2
 DRAG_FACTOR_3D = 180
 DRAG_THRESHOLD = 3
@@ -30,7 +33,7 @@ SLIDE_MS = 500
 FLY_MS = 1500
 PLAY_HOLD_MS = 3000
 FRAME_WIDTH = 1/150
-TILE_CACHE_SIZE = 600
+TILE_CACHE_SIZE = if MOBILE then 10 else 300
 FAKE_DELAY = 0 #+1500
 CENTER_BORDER = 40
 DEBUG_BORDERS = false
@@ -57,9 +60,6 @@ TILE_PREFIX = 'http://dmyxhfpirp60t.cloudfront.net/'
 TILE_PREFIX = 'tiles/'
 #]]]
 
-# This is a little lame, but ok for now.
-MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test navigator.userAgent
-
 # shapes:
 RECT = 0
 CIRCLE = 1
@@ -82,6 +82,14 @@ cancelFrame = window.cancelAnimationFrame       ||
 
 $ = (id) -> document.getElementById id
 set_text = (id, t) -> $(id).innerText = t
+
+load_async_js = (src, cb) ->
+  script = document.createElement 'script'
+  script.src = src
+  script.async = true
+  script.addEventListener 'load', cb if cb
+  ref = document.getElementsByTagName('script')[0]
+  ref.parentNode.insertBefore script, ref
 
 clamp = (x, min, max) ->
   Math.min max, Math.max min, x
@@ -244,80 +252,82 @@ track_event = (cat, act, label) ->
   _gaq.push ['_trackEvent', cat, act, label] if window._gaq
 
 
-# Heavily adapted from three.js's CubeGeometry.
-# https://github.com/mrdoob/three.js/blob/master/src/extras/geometries/CubeGeometry.js
-class PanoCube extends THREE.Geometry
-  make_material = (url, max_aniso, redraw) ->
-    tex = new THREE.Texture
-    tex.anisotropy = max_aniso
-    tex.minFilter = THREE.LinearFilter
-    tex.generateMipmaps = false
-    mat = new THREE.MeshBasicMaterial {map: tex, overdraw: true, visible: false}
-    cb = (loader) =>
-      tex.image = loader.dom
-      tex.needsUpdate = true
-      mat.visible = true
-      redraw()
-    mat._ocicle_loader = new ImageLoader url, cb, false
-    mat
+PanoCube = null
+on_three_load = () ->
+  # Heavily adapted from three.js's CubeGeometry.
+  # https://github.com/mrdoob/three.js/blob/master/src/extras/geometries/CubeGeometry.js
+  class PanoCube extends THREE.Geometry
+    make_material = (url, max_aniso, redraw) ->
+      tex = new THREE.Texture
+      tex.anisotropy = max_aniso
+      tex.minFilter = THREE.LinearFilter
+      tex.generateMipmaps = false
+      mat = new THREE.MeshBasicMaterial {map: tex, overdraw: true, visible: false}
+      cb = (loader) =>
+        tex.image = loader.dom
+        tex.needsUpdate = true
+        mat.visible = true
+        redraw()
+      mat._ocicle_loader = new ImageLoader url, cb, false
+      mat
 
-  constructor: (size, split_level, tile_level, get_url, max_aniso, redraw) ->
-    super()
+    constructor: (size, split_level, tile_level, get_url, max_aniso, redraw) ->
+      super()
 
-    url_idx_map = {}
-    split_level = Math.max split_level, tile_level
-    grid = 1 << split_level
-    tile_div = 1 << (split_level - tile_level)
-    segment = size / grid
-    size_half = size / 2
+      url_idx_map = {}
+      split_level = Math.max split_level, tile_level
+      grid = 1 << split_level
+      tile_div = 1 << (split_level - tile_level)
+      segment = size / grid
+      size_half = size / 2
 
-    for [u, v, w, udir, vdir, wdir, facecode] in [
-      ['z', 'y', 'x', -1, -1,  1, 'r']
-      ['z', 'y', 'x',  1, -1, -1, 'l']
-      ['x', 'z', 'y',  1,  1,  1, 'u']
-      ['x', 'z', 'y',  1, -1, -1, 'd']
-      ['x', 'y', 'z',  1, -1,  1, 'f']
-      ['x', 'y', 'z', -1, -1, -1, 'b']
-    ]
-      offset = @vertices.length
-      for iy in [0..grid]
-        for ix in [0..grid]
-          vector = new THREE.Vector3
-          vector[u] = (ix * segment - size_half) * udir
-          vector[v] = (iy * segment - size_half) * vdir
-          vector[w] = size_half * wdir
-          @vertices.push vector
+      for [u, v, w, udir, vdir, wdir, facecode] in [
+        ['z', 'y', 'x', -1, -1,  1, 'r']
+        ['z', 'y', 'x',  1, -1, -1, 'l']
+        ['x', 'z', 'y',  1,  1,  1, 'u']
+        ['x', 'z', 'y',  1, -1, -1, 'd']
+        ['x', 'y', 'z',  1, -1,  1, 'f']
+        ['x', 'y', 'z', -1, -1, -1, 'b']
+      ]
+        offset = @vertices.length
+        for iy in [0..grid]
+          for ix in [0..grid]
+            vector = new THREE.Vector3
+            vector[u] = (ix * segment - size_half) * udir
+            vector[v] = (iy * segment - size_half) * vdir
+            vector[w] = size_half * wdir
+            @vertices.push vector
 
-      for iy in [0...grid]
-        for ix in [0...grid]
-          a = ix + (grid + 1) * iy
-          b = ix + (grid + 1) * (iy + 1)
-          c = (ix + 1) + (grid + 1) * (iy + 1)
-          d = (ix + 1) + (grid + 1) * iy
-          face = new THREE.Face4 a + offset, b + offset, c + offset, d + offset
-          @faces.push face
+        for iy in [0...grid]
+          for ix in [0...grid]
+            a = ix + (grid + 1) * iy
+            b = ix + (grid + 1) * (iy + 1)
+            c = (ix + 1) + (grid + 1) * (iy + 1)
+            d = (ix + 1) + (grid + 1) * iy
+            face = new THREE.Face4 a + offset, b + offset, c + offset, d + offset
+            @faces.push face
 
-          tx = Math.floor ix / tile_div
-          ty = Math.floor iy / tile_div
-          itx = ix - tx * tile_div
-          ity = iy - ty * tile_div
+            tx = Math.floor ix / tile_div
+            ty = Math.floor iy / tile_div
+            itx = ix - tx * tile_div
+            ity = iy - ty * tile_div
 
-          url = get_url(tile_level, facecode, tx, ty)
-          idx = url_idx_map[url]
-          if idx is undefined
-            url_idx_map[url] = idx = @materials.length
-            @materials.push make_material url, max_aniso, redraw
-          face.materialIndex = idx
+            url = get_url(tile_level, facecode, tx, ty)
+            idx = url_idx_map[url]
+            if idx is undefined
+              url_idx_map[url] = idx = @materials.length
+              @materials.push make_material url, max_aniso, redraw
+            face.materialIndex = idx
 
-          @faceVertexUvs[0].push [
-            new THREE.UV itx / tile_div, 1 - ity / tile_div
-            new THREE.UV itx / tile_div, 1 - (ity + 1) / tile_div
-            new THREE.UV (itx + 1) / tile_div, 1 - (ity + 1) / tile_div
-            new THREE.UV (itx + 1) / tile_div, 1 - ity / tile_div
-          ]
+            @faceVertexUvs[0].push [
+              new THREE.UV itx / tile_div, 1 - ity / tile_div
+              new THREE.UV itx / tile_div, 1 - (ity + 1) / tile_div
+              new THREE.UV (itx + 1) / tile_div, 1 - (ity + 1) / tile_div
+              new THREE.UV (itx + 1) / tile_div, 1 - ity / tile_div
+            ]
 
-    @computeCentroids()
-    @mergeVertices()
+      @computeCentroids()
+      @mergeVertices()
 
 
 # metadata interface:
@@ -599,16 +609,14 @@ class Ocicle
 
     @ctx2 = @c2.getContext '2d'
 
+  setup_pano: (pano_meta) ->
     unless @t_renderer  # one-time stuff
       @t_renderer = new THREE.CanvasRenderer {canvas: @c3}
+      @t_renderer.setSize @cw, @ch
       @t_target = new THREE.Vector3 0, 0, 0  # reusable object
       @t_camera = new THREE.PerspectiveCamera
       @t_projector = new THREE.Projector
 
-    @t_renderer.setSize @cw, @ch
-    @point_camera @view
-
-  setup_pano: (pano_meta) ->
     if @t_pano?.src != pano_meta.src
       track_event 'Pano', 'View', pano_meta.src
       @t_pano = new DZPano pano_meta
@@ -1414,7 +1422,8 @@ class Ocicle
       @set_ratio_text max_ratio
       #]]]
 
-      switch_views = @pano_image
+      # only switch views if three.js is loaded
+      switch_views = PanoCube and @pano_image
 
     if switch_views
       if not @between_views
@@ -1461,6 +1470,7 @@ class Ocicle
 
   resize: () ->
     @setup_contexts()
+    @t_renderer.setSize @cw, @ch if @t_renderer
     @redraw()
 
 
@@ -1493,6 +1503,10 @@ on_load = () ->
   meta = new Metadata window.META, '/data/meta.js'
   delete window.META
   window.ocicle = new Ocicle $('c2'), $('c3'), meta, bkgd_image
+
+  # load three.js after a second
+  load = () -> load_async_js 'three.min.js', on_three_load
+  window.setTimeout load, 1000
 
 window.addEventListener 'resize', on_resize, false
 window.addEventListener 'load', on_load, false
