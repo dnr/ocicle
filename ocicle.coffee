@@ -23,6 +23,7 @@
 
 # This is a little lame, but ok for now.
 MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test navigator.userAgent
+OSX = not MOBILE and /mac os x/i.test navigator.userAgent
 
 DRAG_FACTOR = 2
 DRAG_FACTOR_3D = 180
@@ -797,16 +798,17 @@ class Ocicle
     mouseup: (e) ->
       e.preventDefault()
       if @drag_state == 1
-        if e.button == 0 or e.button == 2
+        # On Macs, regular clicks should center around clicked image.
+        if e.button == 1 or (OSX and e.button == 0)
+          [i] = @find_containing_image_client e.clientX, e.clientY
+          coords = @center_around_image i
+          @fly_to coords if coords
+        else if e.button == 0 or e.button == 2
           factor = if e.button == 0 then CLICK_ZOOM_FACTOR else 1/CLICK_ZOOM_FACTOR
           if @view.three_d
             @do_zoom_3d factor, e.clientX, e.clientY
           else
             @do_zoom factor, e.clientX, e.clientY
-        else if e.button == 1
-          [i] = @find_containing_image_client e.clientX, e.clientY
-          coords = @center_around_image i
-          @fly_to coords if coords
       @drag_state = 0
 
     mousewheel: (e) ->
@@ -910,7 +912,7 @@ class Ocicle
           @drag_area = [xa, ya]
           idx = @edit_images.indexOf @drag_img
           if idx < 0
-            @edit_images.push @drag_img
+            @edit_images = [@drag_img]
             # Jump right into dragging state so that we don't remove this image
             # on mouseup.
             @drag_state = 12
