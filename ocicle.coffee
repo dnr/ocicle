@@ -592,7 +592,7 @@ class Ocicle
 
     @setup_contexts()
 
-    @view.from_position @cw2, @ch2, @find_mark('home').pos
+    @view.from_position @cw2, @ch2, @meta.data.marks[0].pos
     @scale_target = @view.scale
     @fov_target = FOV_OUT
     @redraw()
