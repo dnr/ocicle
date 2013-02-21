@@ -548,6 +548,17 @@ class View
     px: (cw2 - @pan_x) / @scale
     py: (ch2 - @pan_y) / @scale
 
+  from_hash: (cw2, ch2, h) ->
+    [px, py, r] = (parseFloat n for n in h.split ',')
+    @from_position cw2, ch2, {px, py, r}
+
+  to_hash: (cw2, ch2) ->
+    {px, py, r} = @to_position cw2, ch2
+    px = px.toPrecision 5
+    py = py.toPrecision 5
+    r = r.toPrecision 5
+    "#{px},#{py},#{r}"
+
 
 class Ocicle
   constructor: (@c2, @c3, @meta, @bkgd_image) ->
@@ -1030,6 +1041,13 @@ class Ocicle
     mousewheel: interaction_normal.mousewheel
   #]]]
 
+  linkto: () ->
+    window.location.hash = @view.to_hash @cw2, @ch2
+
+  hashchange: (hash) ->
+    @view.from_hash @cw2, @ch2, hash
+    @redraw()
+
   # Fly to next/previous image.
   # 1 for next, -1 for prev.
   # Returns true if this is not the last image in this direction.
@@ -1505,10 +1523,17 @@ on_load = () ->
   meta = new Metadata window.META, '/data/meta.js'
   delete window.META
   window.ocicle = new Ocicle $('c2'), $('c3'), meta, bkgd_image
+  on_hashchange()
 
   # load three.js after a second
   load = () -> load_async_js 'three.min.js', on_three_load
   window.setTimeout load, 1000
 
+on_hashchange = () ->
+  hash = window.location.hash.replace '#', ''
+  if hash and window.ocicle
+    window.ocicle.hashchange hash
+
 window.addEventListener 'resize', on_resize, false
 window.addEventListener 'load', on_load, false
+window.addEventListener 'hashchange', on_hashchange, false
