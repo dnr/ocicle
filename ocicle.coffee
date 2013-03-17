@@ -1089,6 +1089,8 @@ class Ocicle
       @view.scale = center_view.scale
       @view.pan_x = center_view.pan_x
       @view.pan_y = center_view.pan_y
+    @scale_target = @view.scale
+    @fov_target = @view.fov || FOV_OUT
     @toggle_three_d @view.three_d
     @redraw()
 
