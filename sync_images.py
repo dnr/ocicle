@@ -30,6 +30,10 @@ CIRCLE = 1
 HEXAGON = 2
 
 
+def Uuid(n=8, alphabet='0123456789'):
+	return ''.join(random.choice(alphabet) for _ in xrange(n))
+
+
 def ReadDzXml(fn):
 	dom = xml.dom.minidom.parse(fn)
 	[img] = dom.getElementsByTagName('Image')
@@ -97,6 +101,10 @@ def main():
 		base = os.path.basename(jpg)[:-4]
 		attrs = MakeTiles(base)
 		AddToMeta(meta['images'], attrs)
+
+	for rec in meta['images']:
+		if 'uuid' not in rec:
+			rec['uuid'] = Uuid()
 
 	if meta != orig_meta and '-n' not in sys.argv:
 		os.rename(META, META + '.backup-%d' % time.time())
