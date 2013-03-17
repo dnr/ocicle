@@ -330,6 +330,8 @@ on_three_load = () ->
       @computeCentroids()
       @mergeVertices()
 
+  window.ocicle?.on_three_load()
+
 
 # metadata interface:
 # images, marks
@@ -431,14 +433,14 @@ class ImageLoader
 
 class DZImage
   constructor: (meta) ->
-    {@src, @w, @h, @ts, px, py, pw, @desc, @shape, @pano} = meta
+    {@src, @w, @h, @ts, px, py, pw, @desc, @shape, @pano, @uuid} = meta
     @min_level = @find_level @ts / 2
     @max_level = @find_level Math.max @w, @h
     @move px, py
     @scale pw
 
   get_meta: () ->
-    return {@src, @w, @h, @ts, @px, @py, @pw, @desc, @shape, @pano}
+    return {@src, @w, @h, @ts, @px, @py, @pw, @desc, @shape, @pano, @uuid}
 
   clone: () ->
     new DZImage @get_meta()
@@ -549,15 +551,41 @@ class View
     py: (ch2 - @pan_y) / @scale
 
   from_hash: (cw2, ch2, h) ->
-    [px, py, r] = (parseFloat n for n in h.split ',')
-    @from_position cw2, ch2, {px, py, r}
+    h = @decode_hash h
+    [d, a, b, c, u] = h.split ','
+    a = parseFloat a
+    b = parseFloat b
+    c = parseFloat c
+    if d == '2'
+      @three_d = false
+      @from_position cw2, ch2, {px: a, py: b, r: c}
+      null
+    else if d == '3'
+      @three_d = true
+      @lat = a
+      @lon = b
+      @fov = c
+      u
 
-  to_hash: (cw2, ch2) ->
-    {px, py, r} = @to_position cw2, ch2
-    px = px.toPrecision 5
-    py = py.toPrecision 5
-    r = r.toPrecision 5
-    "#{px},#{py},#{r}"
+  to_hash: (cw2, ch2, pano_image) ->
+    if @three_d
+      lat = @lat.toPrecision 5
+      lon = @lon.toPrecision 5
+      fov = @fov.toPrecision 5
+      uuid = pano_image.uuid
+      @encode_hash "3,#{lat},#{lon},#{fov},#{uuid}"
+    else
+      {px, py, r} = @to_position cw2, ch2
+      px = px.toPrecision 5
+      py = py.toPrecision 5
+      r = r.toPrecision 5
+      @encode_hash "2,#{px},#{py},#{r},0"
+
+  encode_hash: (str) ->
+    str
+
+  decode_hash: (str) ->
+    str
 
 
 class Ocicle
@@ -622,6 +650,8 @@ class Ocicle
     @ctx2 = @c2.getContext '2d'
 
   setup_pano: (pano_meta) ->
+    return unless PanoCube
+
     unless @t_renderer  # one-time stuff
       @t_renderer = new THREE.CanvasRenderer {canvas: @c3}
       @t_renderer.setSize @cw, @ch
@@ -668,6 +698,11 @@ class Ocicle
     for mark in @meta.data.marks
       if mark.name == name
         return mark
+
+  find_by_uuid: (uuid) ->
+    for i in @images
+      if i.uuid == uuid
+        return i
 
   #[[[
   edit: () ->
@@ -1042,11 +1077,21 @@ class Ocicle
   #]]]
 
   linkto: () ->
-    window.location.hash = @view.to_hash @cw2, @ch2
+    window.location.hash = @view.to_hash @cw2, @ch2, @pano_image
 
   hashchange: (hash) ->
-    @view.from_hash @cw2, @ch2, hash
+    uuid = @view.from_hash @cw2, @ch2, hash
+    if uuid and @view.three_d
+      @pano_image = @find_by_uuid uuid
+      @setup_pano @pano_image.pano
+      # Assume 2d view is zoomed into center of pano image.
+      center_view = @center_around_image @pano_image, 2
+      @view.scale = center_view.scale
+      @view.pan_x = center_view.pan_x
+      @view.pan_y = center_view.pan_y
+    @toggle_three_d @view.three_d
     @redraw()
+
 
   # Fly to next/previous image.
   # 1 for next, -1 for prev.
@@ -1097,10 +1142,11 @@ class Ocicle
       @playing = null
       $('play').src = PLAY_ICON
 
-  center_around_image: (i) ->
+  center_around_image: (i, factor = 1) ->
     return unless i
     scale = Math.min (@cw - CENTER_BORDER) / i.pw,
                      (@ch - CENTER_BORDER) / i.ph
+    scale *= factor
     @view_t.scale = scale
     @view_t.pan_x = @cw2 - (i.px + i.pw / 2) * scale
     @view_t.pan_y = @ch2 - (i.py + i.ph / 2) * scale
@@ -1493,6 +1539,10 @@ class Ocicle
     @t_renderer.setSize @cw, @ch if @t_renderer
     @redraw()
 
+  on_three_load: () ->
+    @setup_pano @pano_image.pano if @pano_image
+    @redraw()
+
 
 on_resize = () ->
   bb = $('bottombar')
@@ -1527,7 +1577,7 @@ on_load = () ->
 
   # load three.js after a second
   load = () -> load_async_js 'three.min.js', on_three_load
-  window.setTimeout load, 1000
+  window.setTimeout load, (if window.ocicle.view.three_d then 0 else 1000)
 
 on_hashchange = () ->
   hash = window.location.hash.replace '#', ''
