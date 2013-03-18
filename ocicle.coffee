@@ -249,6 +249,29 @@ is_off_screen = (e) ->
   Math.max(y1, y2, y3, y4) < -1
 
 
+# only works for insym and outsym having power-of-two length, with gcd < 32
+# pads input with insym[0]. does not remove padding on output.
+base_conv = (str, insym, outsym) ->
+  inlog = log2 insym.length
+  outlen = outsym.length
+  outlog = log2 outlen
+
+  while str.length % outlog
+    str += insym[0]
+
+  out = ''
+  for i in [0 ... str.length/outlog]
+    ds = (insym.indexOf c for c in str[i*outlog ... (i+1)*outlog])
+    ds.reverse()
+    n = 0
+    for d in ds
+      n = (n << inlog) + d
+    for j in [0 ... inlog]
+      out += outsym[n & (outlen-1)]
+      n >>= outlog
+  out
+
+
 track_event = (cat, act, label) ->
   _gaq.push ['_trackEvent', cat, act, label] if window._gaq
 
@@ -550,8 +573,16 @@ class View
     px: (cw2 - @pan_x) / @scale
     py: (ch2 - @pan_y) / @scale
 
+  # hash encoding:
+  # input is 0-9, dash, dot, and comma --> 13 symbols (treat as 16)
+  # output is abcdefghjkmnopqrstuvwxyz23456789 --> 32 symbols
+  # so five input symbols == four output symbols
+  # pad input with another symbol (still two unused)
+  INPUT = '~0123456789,-.XX'
+  OUTPUT = 'abcdefghjkmnopqrstuvwxyz23456789'
+
   from_hash: (cw2, ch2, h) ->
-    h = @decode_hash h
+    h = base_conv(h, OUTPUT, INPUT).replace(/~/g, '')
     [d, a, b, c, u] = h.split ','
     a = parseFloat a
     b = parseFloat b
@@ -568,24 +599,21 @@ class View
       u
 
   to_hash: (cw2, ch2, pano_image) ->
-    if @three_d
+    out = if @three_d
       lat = @lat.toPrecision 5
       lon = @lon.toPrecision 5
       fov = @fov.toPrecision 5
       uuid = pano_image.uuid
-      @encode_hash "3,#{lat},#{lon},#{fov},#{uuid}"
+      "3,#{lat},#{lon},#{fov},#{uuid}"
     else
       {px, py, r} = @to_position cw2, ch2
       px = px.toPrecision 5
       py = py.toPrecision 5
       r = r.toPrecision 5
-      @encode_hash "2,#{px},#{py},#{r},0"
-
-  encode_hash: (str) ->
-    str
-
-  decode_hash: (str) ->
-    str
+      "2,#{px},#{py},#{r},"
+    out = base_conv out, INPUT, OUTPUT
+    # we can remove up to 3 a's from the end and they'll be padded back on
+    out.replace /a{1,3}$/, ''
 
 
 class Ocicle
