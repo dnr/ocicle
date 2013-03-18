@@ -1598,7 +1598,7 @@ on_load = () ->
   if MOBILE
     $('fstoggle').style.display = 'none'
   else
-    bkgd_image = new ImageLoader BKGD_IMAGE
+    bkgd_image = new ImageLoader TILE_PREFIX + BKGD_IMAGE
   on_resize()
   meta = new Metadata window.META, '/data/meta.js'
   delete window.META
