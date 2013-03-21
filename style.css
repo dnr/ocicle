@@ -1,3 +1,4 @@
+@import url(http://fonts.googleapis.com/css?family=Delius);
 
 body {
   background: black;
@@ -49,6 +50,50 @@ a:hover {
   float: top;
   width: 100%;
   /* height set in code */
+}
+
+#mainbox canvas {
+  position: absolute;
+}
+
+#introouter {
+  position: absolute;
+  width: 100%;
+  pointer-events: none;
+  text-align: center;
+  overflow: hidden;
+}
+
+#introinner {
+  width: 50%;
+  width: 80%;
+  max-width: 600px;
+  display: inline-block;
+  margin: 2em;
+}
+
+#introbkgd {
+  position: absolute;
+  background: black;
+  opacity: 0.5;
+  border-radius: 30;
+}
+
+#introtext {
+  padding: 2em;
+  opacity: 0.99;  /* opacity is weird... */
+  font-size: 18;  /* overridden in js */
+}
+
+#introtext p {
+  text-align: justify;
+  font-family: 'Delius', serif;
+  color: #eee;
+  text-shadow:
+    -2px -2px 2px #333,
+     -2px 2px 2px #333,
+     2px -2px 2px #333,
+     2px 2px 2px  #333;
 }
 
 #bottombar, #descbar {

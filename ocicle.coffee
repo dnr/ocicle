@@ -4,10 +4,10 @@
 # keyboard shortcuts.
 # play:
 #   fix issues around hitting next/prev while flying
+#   don't move to next until done preloading
 # fix sluggishness when flying across big waterfall.
 #   maybe use one level lower while animating?
 # make nicer frames?
-# queue for downloading images
 #
 # 3d:
 # load tiles through tilecache
@@ -18,8 +18,14 @@
 # make panning more natural
 # zoom around cursor
 #
+# mobile:
+# fix weird images disappearing bug on android
+# when screen is rotated, keep center, not corner
+# dynamically size tile cache to fit what we need for the play path
+#
 # pre-launch:
 # finish content
+# recreate cloudfront distribution to force 80% images
 
 # This is a little lame, but ok for now.
 MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test navigator.userAgent
@@ -34,7 +40,7 @@ SLIDE_MS = 500
 FLY_MS = 1500
 PLAY_HOLD_MS = 3000
 FRAME_WIDTH = 1/150
-TILE_CACHE_SIZE = if MOBILE then 10 else 300
+TILE_CACHE_SIZE = if MOBILE then 30 else 300
 FAKE_DELAY = 0 #+1500
 CENTER_BORDER = 40
 DEBUG_BORDERS = false
@@ -846,6 +852,7 @@ class Ocicle
       @drag_screen_x = e.clientX
       @drag_screen_y = e.clientY
       @view.copy_to @drag_view
+      if window.introtext then window.introtext.fadeout()
 
     mousemove: (e) ->
       e.preventDefault()
@@ -897,12 +904,14 @@ class Ocicle
         @do_zoom_3d factor, e.clientX, e.clientY
       else
         @do_zoom factor, e.clientX, e.clientY
+      if window.introtext then window.introtext.fadeout()
 
     touchstart: (e) ->
       e.preventDefault()
       @stop_animation()
       @play false
       @touch_snap e
+      if window.introtext then window.introtext.fadeout()
 
     touchmove: (e) ->
       e.preventDefault()
@@ -1575,6 +1584,63 @@ class Ocicle
     @redraw()
 
 
+class IntroText
+  constructor: () ->
+    @setup()
+    @on = true
+
+  setup: () ->
+    text = """<p>
+      These images were all taken between March and July 2012 (except the ones
+      from Iceland, taken in July 2011). Many were composed from multiple
+      exposures, and a few are wide panoramas that let you look around inside
+      them. Most have more than the typical resolution of images on the web, so
+      feel free to zoom in to see more detail.
+    </p>"""
+    if MOBILE
+      text += """<p>
+        On a mobile browser, use the familiar gestures to scroll and zoom. Touch
+        once on an image to center it.
+      </p>"""
+    else if OSX
+      text += """<p>
+        On a Mac, use the scroll gestures to zoom, not pinch-to-zoom. Click and
+        drag to scroll, and click once on an image to center it. (Unfortunately,
+        pinch-to-zoom behavior can't currently be overridden.)
+      </p>"""
+    else
+      text += """<p>
+        On a desktop browser, click and drag to scroll, use the mouse wheel to
+        zoom, and click once on an image to center it.
+      </p>"""
+    text += """<p>David Reiss<br>davidn@gmail.com</p>"""
+    $('introtext').innerHTML = text
+
+  resize: (height) ->
+    return unless @on
+    io = $('introouter')
+    it = $('introtext')
+    ib = $('introbkgd')
+    io.style.height = height
+    it.style.fontSize = clamp(io.clientWidth / 45, 16, 24)
+    ib.style.height = it.clientHeight
+    ib.style.width = it.clientWidth
+
+  fadeout: () ->
+    return unless @on
+    start = Date.now()
+    total = 1000
+    fn = () ->
+      t = Date.now() - start
+      if t > total
+        $('introouter').style.display = 'none'
+        @on = false
+      else
+        $('introouter').style.opacity = clamp(1.0 - t / total, 0, 1)
+        requestFrame fn
+    requestFrame fn
+
+
 on_resize = () ->
   bb = $('bottombar')
   descbar = $('descbar')
@@ -1585,13 +1651,15 @@ on_resize = () ->
     descbar.style.display = 'none'
     bb.appendChild desc if desc.parentElement != bb
     desc.style.width = bb.clientWidth - bs.clientWidth - 16
-    mb.style.height = mb.parentElement.clientHeight - bb.clientHeight
+    height = mb.parentElement.clientHeight - bb.clientHeight
   else
     descbar.style.display = 'block'
     descbar.appendChild desc if desc.parentElement != descbar
     desc.style.width = '100%'
-    mb.style.height = \
+    height = \
       mb.parentElement.clientHeight - bb.clientHeight - descbar.clientHeight
+  mb.style.height = height
+  if window.introtext then window.introtext.resize height
   if window.ocicle then window.ocicle.resize()
 
 on_load = () ->
@@ -1600,6 +1668,7 @@ on_load = () ->
     $('fstoggle').style.display = 'none'
   else
     bkgd_image = new ImageLoader BKGD_IMAGE
+  window.introtext = new IntroText
   on_resize()
   meta = new Metadata window.META, '/data/meta.js'
   delete window.META
