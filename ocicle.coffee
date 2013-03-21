@@ -4,10 +4,13 @@
 # keyboard shortcuts.
 # play:
 #   fix issues around hitting next/prev while flying
-#   don't move to next until done preloading
 # fix sluggishness when flying across big waterfall.
 #   maybe use one level lower while animating?
 # make nicer frames?
+#
+# cache:
+# cache should be smarter. don't remove pending things.
+# also size dynamically to fit what we need along the play path.
 #
 # 3d:
 # load tiles through tilecache
@@ -21,7 +24,6 @@
 # mobile:
 # fix weird images disappearing bug on android
 # when screen is rotated, keep center, not corner
-# dynamically size tile cache to fit what we need for the play path
 #
 # pre-launch:
 # finish content
@@ -459,6 +461,9 @@ class ImageLoader
   @stats: () ->
     '' + (requested - done) + '/' + requested
 
+  @all_done: () ->
+    requested == done
+
 
 class DZImage
   constructor: (meta) ->
@@ -529,6 +534,11 @@ class DZImage
             if not img
               img = new ImageLoader src, redraw
               tile_cache.put src, img
+            else
+              # img exists but is not complete. it might have gotten created
+              # during a prefetch, in which case it won't have a callback. if we
+              # do have a callback, we should replace it here.
+              img.cb ||= redraw
     return
 
 
@@ -658,6 +668,7 @@ class Ocicle
 
     @view = new View false, 1, 0, 0, 90, 0, 0
     @view_t = new View  # reusable object
+    @view_t1 = new View  # reusable object
 
     # interaction state
     @touch_state = {}
@@ -1144,17 +1155,21 @@ class Ocicle
 
     idx += dir
     if idx >= 0 and idx < @images.length
-      view1 = @center_around_image @images[idx]
+      view = @center_around_image @images[idx]
       @between_views = true
       @toggle_three_d false
-      @fly_to view1 if view1
+      @fly_to view if view
 
     # If we can go farther in this direction, calculate that path too
     # and prefetch tiles required for it.
     idx += dir
     if idx >= 0 and idx < @images.length
-      view2 = @center_around_image @images[idx]
-      nextpath = compute_flying_path @cw, @ch, view1, view2
+      # center_around_image puts its result in @view_t and returns it, so
+      # calling it again will overwrite view. Copy to another temorary before
+      # calling center_around_image.
+      view.copy_to @view_t1
+      view = @center_around_image @images[idx]
+      nextpath = compute_flying_path @cw, @ch, @view_t1, view
       @prefetch_path nextpath if nextpath
       return true
     return false
@@ -1175,15 +1190,25 @@ class Ocicle
     if action is undefined
       action = not @playing
     if action
-      step = () => if not @nav 1 then @play false
-      @playing = window.setInterval step, FLY_MS + PLAY_HOLD_MS
       $('play').src = PAUSE_ICON
-      step()
+      @_play_step()
     else
-      window.clearInterval @playing if @playing
+      window.clearTimeout @playing if @playing
       @playing = null
       $('play').src = PLAY_ICON
     window.introtext?.fadeout()
+
+  _play_step: () =>
+    if @nav 1
+      @playing = window.setTimeout @_play_hold_until_loaded, FLY_MS
+    else
+      @play false
+
+  _play_hold_until_loaded: () =>
+    if ImageLoader.all_done()
+      @playing = window.setTimeout @_play_step, PLAY_HOLD_MS
+    else
+      @playing = window.setTimeout @_play_hold_until_loaded, 200
 
   center_around_image: (i, factor = 1) ->
     return unless i
