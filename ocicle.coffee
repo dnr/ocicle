@@ -872,13 +872,14 @@ class Ocicle
     mouseup: (e) ->
       e.preventDefault()
       if @drag_state == 1
-        # On Macs, regular clicks should center around clicked image.
-        if e.button == 1 or (OSX and e.button == 0)
+        # left clicks should center around clicked image
+        if e.button == 0
           [i] = @find_containing_image_client e.clientX, e.clientY
           coords = @center_around_image i
           @fly_to coords if coords
-        else if e.button == 0 or e.button == 2
-          factor = if e.button == 0 then CLICK_ZOOM_FACTOR else 1/CLICK_ZOOM_FACTOR
+        # right click zooms out, middle zooms in
+        else if e.button == 1 or e.button == 2
+          factor = if e.button == 1 then CLICK_ZOOM_FACTOR else 1/CLICK_ZOOM_FACTOR
           if @view.three_d
             @do_zoom_3d factor, e.clientX, e.clientY
           else
@@ -1605,7 +1606,7 @@ on_load = () ->
   window.ocicle = new Ocicle $('c2'), $('c3'), meta, bkgd_image
   on_hashchange()
 
-  # load three.js after a second
+  # load three.js after a second, or right now if we got a link to a panorama
   load = () -> load_async_js 'three.min.js', on_three_load
   window.setTimeout load, (if window.ocicle.view.three_d then 0 else 1000)
 
