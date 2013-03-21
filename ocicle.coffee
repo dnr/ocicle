@@ -281,7 +281,7 @@ base_conv = (str, insym, outsym) ->
 
 
 track_event = (cat, act, label) ->
-  _gaq.push ['_trackEvent', cat, act, label] if window._gaq
+  window._gaq?.push ['_trackEvent', cat, act, label]
 
 
 PanoCube = null
@@ -1685,8 +1685,8 @@ on_resize = () ->
     height = \
       mb.parentElement.clientHeight - bb.clientHeight - descbar.clientHeight
   mb.style.height = height
-  if window.introtext then window.introtext.resize height
-  if window.ocicle then window.ocicle.resize()
+  window.introtext?.resize height
+  window.ocicle?.resize()
 
 on_load = () ->
   new ImageLoader PAUSE_ICON   # prefetch this so it's cached
