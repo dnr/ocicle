@@ -1395,7 +1395,6 @@ class Ocicle
 
     if really
       ctx.strokeStyle = 'hsl(210,5%,5%)'
-      ctx.shadowColor = 'hsl(210,5%,15%)'
 
     for i in @images
       x = i.px * view.scale + view.pan_x
@@ -1413,8 +1412,6 @@ class Ocicle
         ctx.save()
 
         ctx.lineWidth = 2 * fw
-        if i is @highlight_image
-          ctx.shadowOffsetX = ctx.shadowOffsetY = fw
         if @edit_mode and i in @edit_images
           ctx.strokeStyle = 'hsl(30,50%,50%)'
           ctx.lineWidth *= 2
@@ -1431,8 +1428,6 @@ class Ocicle
 
         ctx.stroke()
         ctx.clip()
-
-        ctx.shadowOffsetX = ctx.shadowOffsetY = 0
 
       draw_ctx = if really then ctx else null
       i.render_onto_ctx draw_ctx, @tile_cache, x, y, w, h, redraw
