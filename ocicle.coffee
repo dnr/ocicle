@@ -1624,6 +1624,7 @@ class IntroText
     io = $('introouter')
     it = $('introtext')
     ib = $('introbkgd')
+    # super-hacky "responsive" design:
     io.style.height = height
     it.style.fontSize = clamp(io.clientWidth / 45, 16, 24)
     ib.style.height = it.clientHeight
@@ -1631,13 +1632,15 @@ class IntroText
 
   fadeout: () ->
     return unless @on
+    @on = false
     start = Date.now()
     total = 1000
+    # TODO: it might be nice to integrate this into Ocicle's animation loop, but
+    # it's only for a second.
     fn = () ->
       t = Date.now() - start
       if t > total
         $('introouter').style.display = 'none'
-        @on = false
       else
         $('introouter').style.opacity = clamp(1.0 - t / total, 0, 1)
         requestFrame fn
