@@ -18,9 +18,6 @@ zip() {
   touch -r $1 $1.gz
 }
 
-mkdir -p publish/bkgd
-jpegoptim -d publish/bkgd -m80 -p --strip-all bkgd/bk4as.jpg
-
 copy favicon.ico
 cp -a icons publish
 copy three.min.js
