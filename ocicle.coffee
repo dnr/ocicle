@@ -852,7 +852,7 @@ class Ocicle
       @drag_screen_x = e.clientX
       @drag_screen_y = e.clientY
       @view.copy_to @drag_view
-      if window.introtext then window.introtext.fadeout()
+      window.introtext?.fadeout()
 
     mousemove: (e) ->
       e.preventDefault()
@@ -904,14 +904,14 @@ class Ocicle
         @do_zoom_3d factor, e.clientX, e.clientY
       else
         @do_zoom factor, e.clientX, e.clientY
-      if window.introtext then window.introtext.fadeout()
+      window.introtext?.fadeout()
 
     touchstart: (e) ->
       e.preventDefault()
       @stop_animation()
       @play false
       @touch_snap e
-      if window.introtext then window.introtext.fadeout()
+      window.introtext?.fadeout()
 
     touchmove: (e) ->
       e.preventDefault()
@@ -1162,10 +1162,12 @@ class Ocicle
   next: () ->
     @play false
     @nav 1
+    window.introtext?.fadeout()
 
   prev: () ->
     @play false
     @nav -1
+    window.introtext?.fadeout()
 
   # Starts or stops auto-play.
   # True to start, false to stop, missing to toggle.
@@ -1181,6 +1183,7 @@ class Ocicle
       window.clearInterval @playing if @playing
       @playing = null
       $('play').src = PLAY_ICON
+    window.introtext?.fadeout()
 
   center_around_image: (i, factor = 1) ->
     return unless i
