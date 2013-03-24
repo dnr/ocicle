@@ -1,16 +1,13 @@
 
 # TODO:
 # use more detailed scales when zooming out.
-# keyboard shortcuts.
+# more keyboard shortcuts:
+#   shift+u/d/l/r should pan
 # play:
 #   fix issues around hitting next/prev while flying
 # fix sluggishness when flying across big waterfall.
 #   maybe use one level lower while animating?
 # make nicer frames?
-#
-# cache:
-# cache should be smarter. don't remove pending things.
-# also size dynamically to fit what we need along the play path.
 #
 # 3d:
 # load tiles through tilecache
@@ -22,7 +19,6 @@
 # zoom around cursor
 #
 # mobile:
-# fix weird images disappearing bug on android
 # when screen is rotated, keep center, not corner
 #
 # pre-launch:
@@ -381,55 +377,22 @@ on_three_load = () ->
 class Metadata
   constructor: (@data, @js_path) ->
 
+  #[[[
   save: (cb) ->
     value = JSON.stringify @data
     value = 'window.META=' + value + ';\n'
     simpleXHR 'PUT', @js_path, value, (req) ->
       if cb then cb req.status == 200
-
-
-# adapted from https://gist.github.com/771192
-class LruCache
-  constructor: (@max_length) ->
-    @map = {}
-    @_has = @map.hasOwnProperty.bind @map
-    @length = 0
-
-  _insert: (node) ->
-    @map[node[0]] = node
-    @length++
-    if @length > @max_length
-      for key of @map
-        # Depends on unspecified behavior, that JavaScript enumerates
-        # objects in the order that the keys were inserted.
-        if @_has key
-          @_remove @map[key]
-          break
-
-  _remove: (node) ->
-    delete @map[node[0]]
-    @length--
-
-  get: (key) ->
-    node = @map[key]
-    if node
-      @_remove node
-      @_insert node
-      node[1]
-    else
-      undefined
-
-  put: (key, value) ->
-    if @_has key
-      node = @map[key]
-      node[1] = value
-      @_remove node
-      @_insert node
-    else
-      @_insert [key, value]
+  #]]]
 
 
 class ImageLoader
+  # states:
+  UNLOADED = 0
+  LOADING = 1
+  COMPLETE = 2
+  ERROR = 3
+
   requested = 0
   done = 0
 
@@ -437,11 +400,13 @@ class ImageLoader
     () -> window.setTimeout func, FAKE_DELAY + 200 * Math.random()
 
   constructor: (@src, @cb, autoload=true) ->
+    @state = UNLOADED
     @load() if autoload
+    @used_in_frame = 0
 
   load: () ->
     if @src
-      @complete = false
+      @state = LOADING
       @dom = new Image()
       @dom.addEventListener 'load', if FAKE_DELAY then delay @_onload else @_onload
       @dom.addEventListener 'error', if FAKE_DELAY then delay @_onerror else @_onerror
@@ -451,18 +416,74 @@ class ImageLoader
 
   _onload: () =>
     done++
-    @complete = true
+    @state = COMPLETE
     @cb @ if @cb
     delete @cb
 
   _onerror: () =>
+    @state = ERROR
     done++
+
+  complete: () ->
+    @state == COMPLETE
 
   @stats: () ->
     '' + (requested - done) + '/' + requested
 
   @all_done: () ->
     requested == done
+
+
+# A TileCache holds ImageLoaders keyed by string (src). They go in map1 to
+# start, which can grow to any size. On gc, loaders can move from map1 to map2
+# if they are done (success or failure) and haven't been used in a "while". map2
+# is limited in size and loaders get dropped in lru order if it gets too big.
+class TileCache
+  constructor: (@max_length) ->
+    @map1 = {}
+    @map2 = {}
+    @_has1 = @map1.hasOwnProperty.bind @map1
+    @_has2 = @map2.hasOwnProperty.bind @map2
+    @frame_number = 0
+
+  set_current_frame: (@frame_number) ->
+
+  get: (key) ->
+    if @_has1 key
+      val = @map1[key]
+    else if @_has2 key
+      val = @map2[key]
+    else
+      val = null
+    val?.used_in_frame = @frame_number
+    val
+
+  put: (key, val) ->
+    @map1[key] = val
+
+  gc: (gap) ->
+    # Move images from map1 to map2 if they are done loading (either success or
+    # error) and have not been used in gap frames.
+    del = []
+    for own key of @map1
+      val = @map1[key]
+      # state == COMPLETE or ERROR, not UNLOADED or LOADING
+      if val.state >= 2 and (@frame_number - val.used_in_frame) > gap
+        @map2[key] = val
+        del.push key
+    for key in del
+      delete @map1[key]
+
+    # Drop things from map2 if it's too big.
+    len = 0
+    for own key of @map2
+      len++
+    while len > @max_length
+      # Depends on unspecified behavior, that JavaScript enumerates
+      # objects in the order that the keys were inserted.
+      for own key of @map2
+        delete @map2[key]
+        break
 
 
 class DZImage
@@ -514,7 +535,7 @@ class DZImage
           diff = level - level2
           src = @get_at_level level2, c >> diff, r >> diff
           img = tile_cache.get src
-          if img?.complete
+          if img?.complete()
             if ctx
               ts = tile_size >> diff
               sx = ts * (c % (1 << diff))
@@ -657,14 +678,16 @@ class Ocicle
     add_event ['touchstart'], 'touchstart'
     add_event ['touchmove'], 'touchmove'
     add_event ['touchend', 'touchleave', 'touchcancel'], 'touchend'
+    window.addEventListener 'keydown', @keydown
 
     @last_now = @fps = 0
+    @frame_number = 0
     #[[[
     @gridsize = parseInt $('gridsize').value
     #]]]
     @images = (new DZImage dz for dz in @meta.data.images)
     @setup_bookmarks()
-    @tile_cache = new LruCache TILE_CACHE_SIZE
+    @tile_cache = new TileCache TILE_CACHE_SIZE
 
     @view = new View false, 1, 0, 0, 90, 0, 0
     @view_t = new View  # reusable object
@@ -898,10 +921,7 @@ class Ocicle
         # right click zooms out, middle zooms in
         else if e.button == 1 or e.button == 2
           factor = if e.button == 1 then CLICK_ZOOM_FACTOR else 1/CLICK_ZOOM_FACTOR
-          if @view.three_d
-            @do_zoom_3d factor, e.clientX, e.clientY
-          else
-            @do_zoom factor, e.clientX, e.clientY
+          @do_zoom factor, e.clientX, e.clientY
       @drag_state = 0
 
     mousewheel: (e) ->
@@ -911,10 +931,7 @@ class Ocicle
         factor = if e.wheelDelta > 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
       else
         factor = if e.detail < 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
-      if @view.three_d
-        @do_zoom_3d factor, e.clientX, e.clientY
-      else
-        @do_zoom factor, e.clientX, e.clientY
+      @do_zoom factor, e.clientX, e.clientY
       window.introtext?.fadeout()
 
     touchstart: (e) ->
@@ -966,7 +983,7 @@ class Ocicle
           @do_zoom_3d factor
         else
           factor = factor * @drag_view.scale / @scale_target
-          # Do this manually instead of using @do_zoom so that we can pan
+          # Do this manually instead of using @do_zoom_2d so that we can pan
           # following the midpoint of the two touches.
           @scale_target *= factor
           @view_t.scale = @scale_target
@@ -1125,6 +1142,25 @@ class Ocicle
     mousewheel: interaction_normal.mousewheel
   #]]]
 
+  keydown: (e) =>
+    window.introtext?.fadeout()
+    @play false
+    if e.altKey or e.ctrlKey or e.metaKey
+      return true
+    switch e.keyCode
+      when 37, 63234  # left
+        @nav -1
+      when 32, 39, 63235  # space, right
+        @nav 1
+      when 38, 63232  # up
+        @do_zoom WHEEL_ZOOM_FACTOR, @cw2, @ch2
+      when 40, 63233  # down
+        @do_zoom 1/WHEEL_ZOOM_FACTOR, @cw2, @ch2
+      else
+        return true
+    e.preventDefault()
+    return false
+
   linkto: () ->
     window.location.hash = @view.to_hash @cw2, @ch2, @pano_image
 
@@ -1220,7 +1256,7 @@ class Ocicle
     @view_t.pan_y = @ch2 - (i.py + i.ph / 2) * scale
     @view_t
 
-  do_zoom: (factor, client_x, client_y) ->
+  do_zoom_2d: (factor, client_x, client_y) ->
     # We don't need to subtract getBoundingClientRect().left/top because
     # we know the canvas is positioned against the top left corner of
     # the window.
@@ -1240,6 +1276,12 @@ class Ocicle
     @view_t.lat = @view.lat
     @view_t.lon = @view.lon
     @slide_to_3d @view_t
+
+  do_zoom: (factor, client_x, client_y) ->
+    if @view.three_d
+      @do_zoom_3d factor, client_x, client_y
+    else
+      @do_zoom_2d factor, client_x, client_y
 
   slide_to: (e, ms=SLIDE_MS) ->
     @scale_target = e.scale
@@ -1302,9 +1344,9 @@ class Ocicle
     @c3.style.display = if val then 'block' else 'none'
 
   draw_background: () ->
-    if not @bkgd_image?.complete
+    if not @bkgd_image?.complete()
       # If we're not going to draw over everything, clear it.
-      @ctx2.fillStyle = 'black'
+      @ctx2.fillStyle = '#6f6f67'
       @ctx2.fillRect 0, 0, @cw, @ch
       return
 
@@ -1503,6 +1545,7 @@ class Ocicle
 
   render: () ->
     @request_id = null
+    @tile_cache.set_current_frame ++@frame_number
     #[[[
     @update_fps()
     #]]]
@@ -1575,10 +1618,17 @@ class Ocicle
       unless @skip_limits
         if max_ratio > 0 and max_ratio < 1 / ZOOM_LIMIT_LIMIT
           @scale_target = @view.scale
-          @do_zoom max_ratio * ZOOM_LIMIT_TARGET, @cw2, @ch2
+          @do_zoom_2d max_ratio * ZOOM_LIMIT_TARGET, @cw2, @ch2
         else if @view.scale < UNZOOM_LIMIT
           @scale_target = @view.scale
-          @do_zoom 1.05, @cw2, @ch2
+          @do_zoom_2d 1.05, @cw2, @ch2
+
+    if (@frame_number & 63) == 0  # about once a second
+      # 5 seconds at 60fps. This is sized to be longer than the delay between
+      # images during the slideshow, as a hacky way of making prefetched images
+      # stay in the cache until we need them.
+      # TODO: there should be a cleaner way to do this.
+      @tile_cache.gc 5 * 60
 
   draw_loop: () =>
     more = @animation?()
