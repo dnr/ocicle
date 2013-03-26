@@ -23,7 +23,6 @@
 #
 # pre-launch:
 # finish content
-# recreate cloudfront distribution to force 80% images
 
 # This is a little lame, but ok for now.
 MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test navigator.userAgent
@@ -60,7 +59,7 @@ PLAY_ICON = 'icons/play.png'
 PAUSE_ICON = 'icons/pause.png'
 SAVE_ICON = 'icons/save.png'
 
-TILE_PREFIX = 'http://dmyxhfpirp60t.cloudfront.net/'
+TILE_PREFIX = 'http://dknd8wx1lonn4.cloudfront.net/'
 #[[[
 TILE_PREFIX = 'tiles/'
 #]]]
