@@ -1,4 +1,5 @@
-@import url(http://fonts.googleapis.com/css?family=Delius);
+@import url(http://fonts.googleapis.com/css?family=Habibi);
+@import url(http://fonts.googleapis.com/css?family=Alike+Angular);
 
 body {
   background: black;
@@ -87,7 +88,7 @@ a:hover {
 
 #introtext p {
   text-align: justify;
-  font-family: 'Delius', serif;
+  font-family: 'Habibi', serif;
   color: #eee;
   text-shadow:
     -2px -2px 2px #333,
@@ -139,11 +140,16 @@ a:hover {
 }
 
 #desc {
+  font-family: 'Alike Angular', serif;
   text-align: center;
   padding: 2px;
   overflow: hidden;
   /* width set in code */
   /* line-height set in code */
+}
+
+#flyto {
+  font-family: 'Habibi', serif;
 }
 
 #info {
