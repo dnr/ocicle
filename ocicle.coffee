@@ -437,6 +437,7 @@ class ImageLoader
 # start, which can grow to any size. On gc, loaders can move from map1 to map2
 # if they are done (success or failure) and haven't been used in a "while". map2
 # is limited in size and loaders get dropped in lru order if it gets too big.
+# Loaders are moved from map2 to map1 when requested.
 class TileCache
   constructor: (@max_length) ->
     @map1 = {}
@@ -452,6 +453,9 @@ class TileCache
       val = @map1[key]
     else if @_has2 key
       val = @map2[key]
+      # move back to map1 now that it's been used recently.
+      @map1[key] = val
+      delete @map2[key]
     else
       val = null
     val?.used_in_frame = @frame_number
