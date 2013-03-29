@@ -140,6 +140,7 @@ clear_node = (node) ->
   if not (node instanceof Node) then node = $(node)
   while node.hasChildNodes()
     node.removeChild node.firstChild
+  return
 
 is_empty_obj = (o) ->
   for own k of o
@@ -400,18 +401,18 @@ class ImageLoader
 
   constructor: (@src, @cb, autoload=true) ->
     @state = UNLOADED
+    @dom = null
     @load() if autoload
     @used_in_frame = 0
 
   load: () ->
-    if @src
+    unless @dom
       @state = LOADING
       @dom = new Image()
       @dom.addEventListener 'load', if FAKE_DELAY then delay @_onload else @_onload
       @dom.addEventListener 'error', if FAKE_DELAY then delay @_onerror else @_onerror
       requested++
       @dom.src = @src
-      @src = null
 
   _onload: () =>
     done++
@@ -481,12 +482,13 @@ class TileCache
     len = 0
     for own key of @map2
       len++
-    while len > @max_length
+    while len-- > @max_length
       # Depends on unspecified behavior, that JavaScript enumerates
       # objects in the order that the keys were inserted.
       for own key of @map2
         delete @map2[key]
         break
+    return
 
 
 class DZImage
@@ -764,6 +766,7 @@ class Ocicle
         false
       li.appendChild a
       ul.appendChild li
+    return
 
   find_mark: (name) ->
     for mark in @meta.data.marks
@@ -1534,6 +1537,7 @@ class Ocicle
   prefetch_path: (path) ->
     for t in [0..5]
       @draw_images false, path(t/5, @view_t), null
+    return
 
   point_camera: (view) ->
     asp = @cw/@ch
