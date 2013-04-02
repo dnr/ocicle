@@ -21,6 +21,17 @@
 # mobile:
 # when screen is rotated, keep center, not corner
 #
+# analytics:
+#   custom logging:
+#     log interactions (pan, zoom, center, icon clicks) to see how people use it
+#     log images (same as current track events) to see what people view
+#     log view every 1s to see where people spent time
+#     also of course url, referer, user agent, window size
+#   create unique session id on load to correlate.
+#   post initial session id and static stuff, then for dynamic events, queue up
+#   and post to server every 10s.
+#   server just has to take events and append them to a flat file for now.
+#
 # pre-launch:
 # finish content
 
