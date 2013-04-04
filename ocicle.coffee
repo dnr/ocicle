@@ -21,17 +21,6 @@
 # mobile:
 # when screen is rotated, keep center, not corner
 #
-# analytics:
-#   custom logging:
-#     log interactions (pan, zoom, center, icon clicks) to see how people use it
-#     log images (same as current track events) to see what people view
-#     log view every 1s to see where people spent time
-#     also of course url, referer, user agent, window size
-#   create unique session id on load to correlate.
-#   post initial session id and static stuff, then for dynamic events, queue up
-#   and post to server every 10s.
-#   server just has to take events and append them to a flat file for now.
-#
 # pre-launch:
 # finish content
 
@@ -141,6 +130,7 @@ hexagon = (ctx, x, y, w, h) ->
   ctx.lineTo x, y + h / 2
   ctx.lineTo x + o, y
 
+# TODO: move into util.coffee
 simpleXHR = (action, url, data, cb) ->
   req = new XMLHttpRequest
   req.onreadystatechange = () -> if req.readyState == 4 then cb req
@@ -285,10 +275,6 @@ base_conv = (str, insym, outsym) ->
       out += outsym[n & (outlen-1)]
       n >>= outlog
   out
-
-
-track_event = (cat, act, label) ->
-  window._gaq?.push ['_trackEvent', cat, act, label]
 
 
 PanoCube = null
@@ -696,6 +682,11 @@ class Ocicle
     add_event ['touchend', 'touchleave', 'touchcancel'], 'touchend'
     window.addEventListener 'keydown', @keydown
 
+    @logger = window.logger
+    @logger.add 'ua', navigator.userAgent
+    @logger.add 'url', document.URL
+    @logger.add 'referrer', document.referrer
+
     @last_now = @fps = 0
     @frame_number = 0
     #[[[
@@ -720,6 +711,10 @@ class Ocicle
     @fov_target = FOV_OUT
     @redraw()
 
+    log_pos = () =>
+      @logger.add 'view', @view.to_hash @cw2, @ch2, @pano_image
+    window.setInterval log_pos, 1000
+
   setup_contexts: () ->
     @cw = @c2.parentElement.clientWidth
     if @c2.width != @cw then @c2.width = @cw
@@ -733,6 +728,8 @@ class Ocicle
 
     @ctx2 = @c2.getContext '2d'
 
+    @logger.add 'size', [screen.width, screen.height, @cw, @ch]
+
   setup_pano: (pano_meta) ->
     return unless PanoCube
 
@@ -744,7 +741,7 @@ class Ocicle
       @t_projector = new THREE.Projector
 
     if @t_pano?.src != pano_meta.src
-      track_event 'Pano', 'View', pano_meta.src
+      @logger.add 'pano', pano_meta.src
       @t_pano = new DZPano pano_meta
       max_aniso = @t_renderer.getMaxAnisotropy()
       @t_scene = new THREE.Scene()
@@ -771,6 +768,7 @@ class Ocicle
       a.href = '#'
       a.innerText = mark.name
       a.onclick = do (mark) => () =>
+        @logger.add 'mark', mark.name
         @play false
         @view_t.from_position @cw2, @ch2, mark.pos
         @fly_to @view_t
@@ -926,6 +924,7 @@ class Ocicle
             @view_t.pan_y = @drag_view.pan_y + DRAG_FACTOR * move_y
             @view_t.scale = @view.scale
             @slide_to @view_t
+          @logger.count 'pan'
 
     mouseup: (e) ->
       e.preventDefault()
@@ -935,10 +934,12 @@ class Ocicle
           [i] = @find_containing_image_client e.clientX, e.clientY
           coords = @center_around_image i
           @fly_to coords if coords
+          @logger.count 'center'
         # right click zooms out, middle zooms in
         else if e.button == 1 or e.button == 2
           factor = if e.button == 1 then CLICK_ZOOM_FACTOR else 1/CLICK_ZOOM_FACTOR
           @do_zoom factor, e.clientX, e.clientY
+          @logger.count "clickzoom#{if e.button == 1 then 'i' else 'o'}"
       @drag_state = 0
 
     mousewheel: (e) ->
@@ -950,6 +951,7 @@ class Ocicle
         factor = if e.detail < 0 then WHEEL_ZOOM_FACTOR else 1/WHEEL_ZOOM_FACTOR
       @do_zoom factor, e.clientX, e.clientY
       window.introtext?.fadeout()
+      @logger.count "zoom#{if factor > 1 then 'i' else 'o'}"
 
     touchstart: (e) ->
       e.preventDefault()
@@ -979,6 +981,7 @@ class Ocicle
           @view_t.pan_y = @drag_view.pan_y + DRAG_FACTOR * move_y
           @view_t.scale = @view.scale
           @slide_to @view_t
+        @logger.count 'tpan'
       else if e.touches.length == 2
         # Zoom+pan: Use the distance between the touches to calculate zoom, then
         # pan following the midpoint of the touches.
@@ -1011,6 +1014,7 @@ class Ocicle
             @scale_target / @drag_view.scale * (
               (ts0.sy + ts1.sy) / 2 - @drag_view.pan_y))
           @slide_to @view_t
+        @logger.count 'tzoom'
       return
 
     touchend: (e) ->
@@ -1176,6 +1180,7 @@ class Ocicle
       else
         return true
     e.preventDefault()
+    @logger.count "keydown#{e.keyCode}"
     return false
 
   linkto: () ->
@@ -1231,11 +1236,13 @@ class Ocicle
     @play false
     @nav 1
     window.introtext?.fadeout()
+    @logger.count 'next'
 
   prev: () ->
     @play false
     @nav -1
     window.introtext?.fadeout()
+    @logger.count 'prev'
 
   # Starts or stops auto-play.
   # True to start, false to stop, missing to toggle.
@@ -1245,6 +1252,7 @@ class Ocicle
     if action
       $('play').src = PAUSE_ICON
       @_play_step()
+      @logger.count 'play'
     else
       window.clearTimeout @playing if @playing
       @playing = null
@@ -1407,7 +1415,7 @@ class Ocicle
 
     # track event if this is new
     if i and i != @last_highlight_image
-      track_event 'Image', 'View', i.src
+      @logger.add 'image', i.src
       @last_highlight_image = i
 
     # also check if we're inside it to set the pano image

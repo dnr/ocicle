@@ -26,9 +26,10 @@ copy_strip index.html
 copy_strip style.css
 
 copy_strip ocicle.coffee
-coffee -c publish/ocicle.coffee
-uglifyjs data/meta.js bigscreen.js publish/ocicle.js -c -m -o publish/app.js
-rm publish/ocicle.coffee publish/ocicle.js
+copy_strip logger.coffee
+coffee -c publish/{logger,ocicle}.coffee
+uglifyjs data/meta.js bigscreen.js publish/{logger,ocicle}.js -c -m -o publish/app.js
+rm publish/{logger,ocicle}.{coffee,js}
 
 zip publish/app.js
 zip publish/three.min.js

@@ -22,7 +22,6 @@ class log_event:
       data = json.loads(data)
       assert type(data) == dict
 
-      data['ua'] = web.ctx.env.get('HTTP_USER_AGENT')
       data['ip'] = web.ctx.env.get('REMOTE_ADDR')
       data['tm'] = time.time()
 
