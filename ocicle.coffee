@@ -16,6 +16,9 @@
 # make panning more natural
 # zoom around cursor
 #
+# find some way to avoid repeatedly transferring fully black tiles.
+#   maybe just delete them and treat 404 as "black"?
+#
 # pre-launch:
 # finish content
 
