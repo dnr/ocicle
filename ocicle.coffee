@@ -18,9 +18,6 @@
 # make panning more natural
 # zoom around cursor
 #
-# mobile:
-# when screen is rotated, keep center, not corner
-#
 # pre-launch:
 # finish content
 
@@ -43,7 +40,7 @@ EXTRA_TILE_CACHE_SIZE = if MOBILE then 15 else 150
 # them. TODO: there should be a cleaner way to do this.
 TILE_CACHE_GC_SECONDS = 5
 FAKE_DELAY = 0 #+1500
-CENTER_BORDER = 40
+CENTER_BORDER = if MOBILE then 20 else 40
 DEBUG_BORDERS = false
 ZOOM_LIMIT_LIMIT = 3.3
 ZOOM_LIMIT_TARGET = 3.0
@@ -1689,8 +1686,12 @@ class Ocicle
       requestFrame @draw_loop
 
   resize: () ->
+    old_cw2 = @cw2
+    old_ch2 = @ch2
     @setup_contexts()
     @t_renderer.setSize @cw, @ch if @t_renderer
+    @view.pan_x += @cw2 - old_cw2
+    @view.pan_y += @ch2 - old_ch2
     @redraw()
 
   on_three_load: () ->
