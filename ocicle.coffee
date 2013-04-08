@@ -3,8 +3,6 @@
 # use more detailed scales when zooming out.
 # more keyboard shortcuts:
 #   shift+u/d/l/r should pan
-# play:
-#   fix issues around hitting next/prev while flying
 # fix sluggishness when flying across big waterfall.
 #   maybe use one level lower while animating?
 # make nicer frames?
@@ -703,6 +701,7 @@ class Ocicle
     @logger.add 'url', document.URL
     @logger.add 'referrer', document.referrer
 
+    @highlight_image = @nav_image = null
     @last_now = Date.now()
     @fps = 30  # initial guess
     @frame_number = 0
@@ -1223,17 +1222,20 @@ class Ocicle
   # 1 for next, -1 for prev.
   # Returns true if this is not the last image in this direction.
   nav: (dir) ->
-    if @highlight_image
-      idx = @images.indexOf @highlight_image
+    if @nav_image
+      idx = @images.indexOf @nav_image
     else
       idx = -dir
 
     idx += dir
     if idx >= 0 and idx < @images.length
-      view = @center_around_image @images[idx]
+      @nav_image = @images[idx]
+      view = @center_around_image @nav_image
       @between_views = true
       @toggle_three_d false
       @fly_to view if view
+    else
+      @nav_image = null
 
     # If we can go farther in this direction, calculate that path too
     # and prefetch tiles required for it.
@@ -1424,16 +1426,16 @@ class Ocicle
       if i.pw * @view.scale / @cw < 0.5 and i.ph * @view.scale / @ch < 0.5
         i = null
 
-    # update description
-    desc = (i?.desc or '').replace /\n$/, ''
-    set_text 'desc', desc
-    $('desc').style.lineHeight = if desc.search('\n') > 0 then 1.1 else 2.2
-    @highlight_image = i
-
-    # track event if this is new
-    if i and i != @last_highlight_image
+    # update description and track if it's different
+    if not i
+      set_text 'desc', ''
+    else if i and i != @highlight_image
+      desc = (i.desc or '').replace /\n$/, ''
+      set_text 'desc', desc
+      $('desc').style.lineHeight = if desc.search('\n') > 0 then 1.1 else 2.2
       @logger.add 'image', i.src
-      @last_highlight_image = i
+      @nav_image = i
+    @highlight_image = i
 
     # also check if we're inside it to set the pano image
     if (i and i.pano and
