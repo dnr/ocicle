@@ -37,7 +37,11 @@ SLIDE_MS = 500
 FLY_MS = 1500
 PLAY_HOLD_MS = 3000
 FRAME_WIDTH = 1/150
-TILE_CACHE_SIZE = if MOBILE then 30 else 300
+EXTRA_TILE_CACHE_SIZE = if MOBILE then 15 else 150
+# This is sized to be longer than the delay between images during the slideshow,
+# as a hacky way of making prefetched images stay in the cache until we need
+# them. TODO: there should be a cleaner way to do this.
+TILE_CACHE_GC_SECONDS = 5
 FAKE_DELAY = 0 #+1500
 CENTER_BORDER = 40
 DEBUG_BORDERS = false
@@ -424,11 +428,13 @@ class ImageLoader
   complete: () ->
     @state == COMPLETE
 
-  @stats: () ->
-    '' + (requested - done) + '/' + requested
-
   @all_done: () ->
     requested == done
+
+  #[[[
+  @stats: () ->
+    "#{requested - done}/#{requested}"
+  #]]]
 
 
 # A TileCache holds ImageLoaders keyed by string (src). They go in map1 to
@@ -437,7 +443,7 @@ class ImageLoader
 # is limited in size and loaders get dropped in lru order if it gets too big.
 # Loaders are moved from map2 to map1 when requested.
 class TileCache
-  constructor: (@max_length) ->
+  constructor: (@max_extra) ->
     @map1 = {}
     @map2 = {}
     @_has1 = @map1.hasOwnProperty.bind @map1
@@ -460,7 +466,10 @@ class TileCache
     val
 
   put: (key, val) ->
+    # This is currently only called if get returns null, otherwise this would
+    # have to check map2.
     @map1[key] = val
+    val.used_in_frame = @frame_number
 
   gc: (gap) ->
     # Move images from map1 to map2 if they are done loading (either success or
@@ -479,13 +488,23 @@ class TileCache
     len = 0
     for own key of @map2
       len++
-    while len-- > @max_length
+    while len-- > @max_extra
       # Depends on unspecified behavior, that JavaScript enumerates
       # objects in the order that the keys were inserted.
       for own key of @map2
         delete @map2[key]
         break
     return
+
+  #[[[
+  stats: () ->
+    len1 = len2 = 0
+    for own key of @map1
+      len1++
+    for own key of @map2
+      len2++
+    "#{len1}/#{len2}"
+  #]]]
 
 
 class DZImage
@@ -687,14 +706,15 @@ class Ocicle
     @logger.add 'url', document.URL
     @logger.add 'referrer', document.referrer
 
-    @last_now = @fps = 0
+    @last_now = Date.now()
+    @fps = 30  # initial guess
     @frame_number = 0
     #[[[
     @gridsize = parseInt $('gridsize').value
     #]]]
     @images = (new DZImage dz for dz in @meta.data.images)
     @setup_bookmarks()
-    @tile_cache = new TileCache TILE_CACHE_SIZE
+    @tile_cache = new TileCache EXTRA_TILE_CACHE_SIZE
 
     @view = new View false, 1, 0, 0, 90, 0, 0
     @view_t = new View  # reusable object
@@ -1428,15 +1448,16 @@ class Ocicle
     else
       @pano_image = null
 
-  #[[[
   update_fps: () ->
     now = Date.now()
     ms = now - @last_now
     return if ms <= 0
     @fps = (1000 / ms + @fps * 9) / 10
-    set_text 'fps', @fps.toFixed 0
     @last_now = now
-    set_text 'tiles', ImageLoader.stats()
+
+  #[[[
+    set_text 'fps', @fps.toFixed 0
+    set_text 'tiles', "#{ImageLoader.stats()}+#{@tile_cache.stats()}"
     pos = @view.to_position @cw2, @ch2
     set_text 'px', pos.px.toPrecision 5
     set_text 'py', pos.py.toPrecision 5
@@ -1572,9 +1593,7 @@ class Ocicle
   render: () ->
     @request_id = null
     @tile_cache.set_current_frame ++@frame_number
-    #[[[
     @update_fps()
-    #]]]
 
     if @view.three_d
       if @t_scene
@@ -1649,12 +1668,8 @@ class Ocicle
           @scale_target = @view.scale
           @do_zoom_2d 1.05, @cw2, @ch2
 
-    if (@frame_number & 63) == 0  # about once a second
-      # 5 seconds at 60fps. This is sized to be longer than the delay between
-      # images during the slideshow, as a hacky way of making prefetched images
-      # stay in the cache until we need them.
-      # TODO: there should be a cleaner way to do this.
-      @tile_cache.gc 5 * 60
+    if (@frame_number & 31) == 0  # once or twice a second
+      @tile_cache.gc TILE_CACHE_GC_SECONDS * @fps
 
   draw_loop: () =>
     more = @animation?()
