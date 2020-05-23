@@ -37,6 +37,7 @@ zip publish/index.html
 zip publish/style.css
 
 chmod -R a+rX publish/
-rsync -azv --delete publish/ m1:zoom/publish/
-
+rsync -av --delete publish/ ../dnr.im/zoom/
 rm -rf publish/
+
+echo -e '\n\ndeploy dnr.im'
